@@ -29,6 +29,17 @@ export async function updateSettings(req: Request, res: Response) {
     'adminLoginOtpEnabled',
     'accessTokenTtlMinutes',
     'refreshTokenTtlDays',
+    'dispatchRadiusKm',
+    'riderRequestTimeoutSeconds',
+    'maxDispatchAttempts',
+    'scheduleLeadMinutes',
+    'freeCancellationMinutes',
+    'freeWaitingMinutes',
+    'selfieCheckIntervalHours',
+    'maxCashDues',
+    'minWithdrawalAmount',
+    'customerAppMinVersion',
+    'riderAppMinVersion',
   ] as const
 
   const mutableSettings = settings as unknown as Record<string, unknown>

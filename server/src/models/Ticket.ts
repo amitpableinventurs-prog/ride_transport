@@ -12,6 +12,8 @@ const ticketSchema = new Schema(
     },
     raisedByType: { type: String, enum: ['customer', 'driver', 'partner'], required: true },
     raisedByName: { type: String, required: true },
+    raisedById: { type: Schema.Types.ObjectId, default: null },
+    description: { type: String },
     booking: { type: Schema.Types.ObjectId, ref: 'Booking', default: null },
     status: { type: String, enum: ['open', 'assigned', 'in_progress', 'resolved', 'closed'], default: 'open' },
     assignedTo: { type: Schema.Types.ObjectId, ref: 'Admin', default: null },

@@ -3,6 +3,9 @@ import { Types, type FilterQuery } from 'mongoose'
 import { Booking, type BookingDocument } from '../models/Booking'
 import { Driver, type DriverDocument } from '../models/Driver'
 import { recordAudit } from '../utils/audit'
+import { notifyUser } from '../utils/notify'
+import { emitBookingEvent, joinBookingRoom, leaveBookingRoom } from '../realtime/socket'
+import { startDispatch, stopDispatch } from '../services/dispatch'
 
 const CUSTOMER_FIELDS = 'name phone email'
 const DRIVER_FIELDS = 'name phone rating onlineStatus currentLocation'
@@ -79,11 +82,29 @@ export async function assignBooking(req: Request, res: Response) {
     return
   }
 
+  const previousDriver = booking.driver
   booking.driver = new Types.ObjectId(driverId)
   if (vehicleId) booking.vehicle = new Types.ObjectId(vehicleId)
-  if (booking.status === 'requested') booking.status = 'accepted'
+  if (booking.status === 'requested' || booking.status === 'no_rider_found') {
+    booking.status = 'accepted'
+    booking.acceptedAt = new Date()
+  }
+  booking.set('offer', { driver: null })
   booking.timeline.push({ status: 'accepted', at: new Date(), note: 'Manually assigned by admin' })
   await booking.save()
+
+  // Keep the apps in sync: stop matching, move rider availability, notify both sides.
+  stopDispatch(booking.id)
+  if (previousDriver && !previousDriver.equals(booking.driver)) {
+    await Driver.updateOne({ _id: previousDriver, onlineStatus: 'on_trip' }, { onlineStatus: 'online' })
+    leaveBookingRoom(booking.id, { driverId: previousDriver })
+  }
+  await Driver.updateOne({ _id: booking.driver }, { onlineStatus: 'on_trip' })
+  joinBookingRoom(booking.id, { customerId: booking.customer, driverId: booking.driver })
+  const rider = await Driver.findById(booking.driver).select('name rating photoUrl')
+  emitBookingEvent(booking.id, 'booking:rider_assigned', { bookingId: booking.id, rider, vehicle: booking.vehicle, etaMin: null }, ['customer'])
+  emitBookingEvent(booking.id, 'booking:status', { bookingId: booking.id, status: booking.status, timestamp: new Date().toISOString() }, ['customer', 'rider', 'admin'])
+  await notifyUser('driver', booking.driver, { title: 'Trip assigned', body: `Booking ${booking.bookingCode} was assigned to you`, data: { bookingId: booking.id, type: 'trip_assigned' } })
 
   await recordAudit(req.admin!, 'booking.assigned', 'Booking', booking.bookingCode, { driverId, vehicleId })
 
@@ -126,6 +147,16 @@ export async function updateBookingStatus(req: Request, res: Response) {
   await booking.save()
 
   await recordAudit(req.admin!, 'booking.status_changed', 'Booking', booking.bookingCode, { status, note, reason })
+
+  if (status === 'cancelled') {
+    stopDispatch(booking.id)
+    if (booking.driver) await Driver.updateOne({ _id: booking.driver, onlineStatus: 'on_trip' }, { onlineStatus: 'online' })
+    emitBookingEvent(booking.id, 'booking:cancelled', { bookingId: booking.id, by: booking.cancellation?.by ?? 'admin', reason: booking.cancellation?.reason, charge: 0 }, ['customer', 'rider', 'admin'])
+    leaveBookingRoom(booking.id)
+  } else {
+    emitBookingEvent(booking.id, 'booking:status', { bookingId: booking.id, status, timestamp: new Date().toISOString() }, ['customer', 'rider', 'admin'])
+    if (status === 'requested') startDispatch(booking.id)
+  }
 
   const populated = await Booking.findById(booking.id)
     .populate('customer', CUSTOMER_FIELDS)

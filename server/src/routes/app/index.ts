@@ -1,27 +1,11 @@
 import { Router } from 'express'
-import rateLimit from 'express-rate-limit'
 import * as appAuthController from '../../controllers/app/auth.controller'
 import * as appProfileController from '../../controllers/app/profile.controller'
 import { rejectDuringMaintenance, requireAppAuth } from '../../middleware/appAuth'
+import { otpSendLimiter, otpVerifyLimiter } from '../../middleware/rateLimits'
 
 // APIs for the Flutter customer / rider-driver / partner apps, mounted at /api/v1/app.
 const router = Router()
-
-const otpSendLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: 'Too many OTP requests. Please try again later.' },
-})
-
-const otpVerifyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: 'Too many attempts. Please try again later.' },
-})
 
 router.use(rejectDuringMaintenance)
 

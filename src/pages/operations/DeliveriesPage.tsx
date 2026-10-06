@@ -6,7 +6,7 @@ export function DeliveriesPage() {
       title="Deliveries"
       subtitle="Transport bookings that are currently accepted, arriving or in transit."
       fixedMode="transport"
-      fixedStatus="accepted,arriving,started,in_transit"
+      fixedStatus="accepted,arriving,arrived,started,in_transit"
       showModeFilter={false}
       showStatusFilter={false}
     />

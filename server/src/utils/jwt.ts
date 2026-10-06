@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 import { env } from '../config/env'
 
@@ -77,6 +78,9 @@ export interface AppTokenPayload {
   sub: string
   ut: AppUserType
   type: 'app_access' | 'app_refresh'
+  /** Refresh tokens only: id used to revoke the token on logout / rotation. */
+  jti?: string
+  exp?: number
 }
 
 export interface AppRegistrationPayload {
@@ -94,6 +98,7 @@ export function signAppAccessToken(userId: string, userType: AppUserType): strin
 export function signAppRefreshToken(userId: string, userType: AppUserType): string {
   return jwt.sign({ sub: userId, ut: userType, type: 'app_refresh' } satisfies AppTokenPayload, env.jwtAppRefreshSecret, {
     expiresIn: `${env.appRefreshTokenTtlDays}d`,
+    jwtid: crypto.randomUUID(),
   })
 }
 
@@ -130,6 +135,24 @@ export function verifyAppRegistrationToken(token: unknown): AppRegistrationPaylo
   try {
     const payload = jwt.verify(token, env.jwtAppAccessSecret) as AppRegistrationPayload
     return payload.type === 'app_registration' ? payload : null
+  } catch {
+    return null
+  }
+}
+
+// ---- Public invoice links ----
+// The invoice URL is opened outside the app (browser / share sheet), so it carries its own short-lived token.
+
+const INVOICE_TTL_DAYS = 7
+
+export function signInvoiceToken(bookingId: string): string {
+  return jwt.sign({ bid: bookingId, type: 'invoice' }, env.jwtAppAccessSecret, { expiresIn: `${INVOICE_TTL_DAYS}d` })
+}
+
+export function verifyInvoiceToken(token: string): string | null {
+  try {
+    const payload = jwt.verify(token, env.jwtAppAccessSecret) as { bid?: string; type?: string }
+    return payload.type === 'invoice' && payload.bid ? payload.bid : null
   } catch {
     return null
   }

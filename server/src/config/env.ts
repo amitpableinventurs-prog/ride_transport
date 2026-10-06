@@ -1,3 +1,4 @@
+import path from 'path'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -12,8 +13,14 @@ const isProduction = process.env.NODE_ENV === 'production'
 const jwtAccessSecret = required('JWT_ACCESS_SECRET', 'dev-access-secret-change-me')
 const jwtRefreshSecret = required('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me')
 
+const port = Number(process.env.PORT ?? 5000)
+
 export const env = {
-  port: Number(process.env.PORT ?? 5000),
+  port,
+  // Base URL the apps use to reach this server; used in share-tracking and invoice links.
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`).replace(/\/$/, ''),
+  // Uploaded documents, selfies and delivery photos (served at /uploads).
+  uploadDir: process.env.UPLOAD_DIR ?? path.resolve(process.cwd(), 'uploads'),
   mongoUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/rideflow_admin'),
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
   jwtAccessSecret,
@@ -36,6 +43,15 @@ export const env = {
   // Never enabled in production.
   otpDevEcho: !isProduction && (process.env.OTP_DEV_ECHO ?? 'true') === 'true',
   smsProvider: process.env.SMS_PROVIDER ?? 'console',
+
+  // Payments: "mock" (development) or "razorpay".
+  paymentProvider: process.env.PAYMENT_PROVIDER ?? 'mock',
+  razorpayKeyId: process.env.RAZORPAY_KEY_ID ?? '',
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
+  // Push notifications: "console" prints them. Add FCM in src/utils/push.ts.
+  pushProvider: process.env.PUSH_PROVIDER ?? 'console',
+  // Masked calling: "direct" returns the real number (development only). Add Exotel etc. in src/utils/telephony.ts.
+  telephonyProvider: process.env.TELEPHONY_PROVIDER ?? 'direct',
 
   isProduction,
 }

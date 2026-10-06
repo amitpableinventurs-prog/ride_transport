@@ -15,6 +15,19 @@ const settingsSchema = new Schema(
     adminLoginOtpEnabled: { type: Boolean, default: true },
     accessTokenTtlMinutes: { type: Number, default: 15 },
     refreshTokenTtlDays: { type: Number, default: 7 },
+
+    // Dispatch and trip rules used by the customer / rider apps
+    dispatchRadiusKm: { type: Number, default: 5 },
+    riderRequestTimeoutSeconds: { type: Number, default: 20 },
+    maxDispatchAttempts: { type: Number, default: 5 },
+    scheduleLeadMinutes: { type: Number, default: 15 },
+    freeCancellationMinutes: { type: Number, default: 2 },
+    freeWaitingMinutes: { type: Number, default: 3 },
+    selfieCheckIntervalHours: { type: Number, default: 24 },
+    maxCashDues: { type: Number, default: 500 },
+    minWithdrawalAmount: { type: Number, default: 100 },
+    customerAppMinVersion: { type: String, default: '1.0.0' },
+    riderAppMinVersion: { type: String, default: '1.0.0' },
   },
   { timestamps: true },
 )

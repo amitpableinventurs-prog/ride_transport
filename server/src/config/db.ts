@@ -17,4 +17,10 @@ export async function connectDb(): Promise<void> {
   const { Driver } = await import('../models/Driver')
   const { TransportPartner } = await import('../models/TransportPartner')
   await Promise.all([Customer.syncIndexes(), Driver.syncIndexes(), TransportPartner.syncIndexes()])
+
+  // Partners created before partner codes existed get one (riders enter it during onboarding).
+  const { generatePartnerCode } = await import('../models/TransportPartner')
+  for (const partner of await TransportPartner.find({ partnerCode: { $exists: false } }).select('_id')) {
+    await TransportPartner.updateOne({ _id: partner._id }, { partnerCode: generatePartnerCode() })
+  }
 }

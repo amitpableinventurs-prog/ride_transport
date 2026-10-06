@@ -5,11 +5,12 @@ import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
-const LIVE_STATUSES = 'accepted,arriving,started,in_transit'
+const LIVE_STATUSES = 'accepted,arriving,arrived,started,in_transit'
 
 const STATUS_COLOR: Record<string, string> = {
   accepted: '#7e93ba',
   arriving: '#1f2f52',
+  arrived: '#1f2f52',
   started: '#f5820c',
   in_transit: '#d96e04',
 }
@@ -18,7 +19,7 @@ type BadgeTone = 'success' | 'warning' | 'danger' | 'neutral' | 'info'
 
 function statusTone(status: string): BadgeTone {
   if (status === 'started' || status === 'in_transit') return 'warning'
-  if (status === 'arriving') return 'info'
+  if (status === 'arriving' || status === 'arrived') return 'info'
   return 'neutral'
 }
 

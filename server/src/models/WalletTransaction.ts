@@ -9,7 +9,7 @@ const walletTransactionSchema = new Schema(
     amount: { type: Number, required: true },
     reason: {
       type: String,
-      enum: ['booking_earning', 'commission', 'recharge', 'refund', 'penalty', 'bonus', 'withdrawal', 'adjustment'],
+      enum: ['booking_earning', 'booking_payment', 'tip', 'commission', 'recharge', 'refund', 'penalty', 'bonus', 'withdrawal', 'adjustment'],
       required: true,
     },
     referenceType: { type: String },

@@ -7,17 +7,30 @@ import { personalProfileFields } from './personalProfile'
 // serviceType distinguishes two-wheeler/auto "riders" from cab "drivers".
 const driverSchema = new Schema(
   {
-    name: { type: String, required: true },
+    // Empty until the user fills the Profile screen (SRS sign-up creates the account at OTP verify).
+    name: { type: String, default: '', trim: true },
     email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
     phone: { type: String, required: true, index: true },
     ...personalProfileFields,
-    serviceType: { type: String, enum: ['rider', 'driver'], required: true },
+    serviceType: { type: String, enum: ['rider', 'driver'], required: true, default: 'rider' },
     approvalStatus: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
+    rejectionReason: { type: String },
+    onboarding: {
+      riderType: { type: String, enum: ['individual', 'partner'] },
+      partner: { type: Schema.Types.ObjectId, ref: 'TransportPartner', default: null },
+      vehicleType: { type: Schema.Types.ObjectId, ref: 'VehicleType', default: null },
+      services: { type: [String], default: undefined },
+      completedAt: { type: Date },
+    },
+    lastSelfieAt: { type: Date },
+    selfieUrl: { type: String },
     status: { type: String, enum: ['active', 'suspended', 'blocked'], default: 'active' },
     onlineStatus: { type: String, enum: ['offline', 'online', 'busy', 'on_trip'], default: 'offline' },
     currentLocation: {
       lat: Number,
       lng: Number,
+      heading: Number,
+      speed: Number,
       updatedAt: Date,
     },
     assignedVehicle: { type: Schema.Types.ObjectId, ref: 'Vehicle', default: null },

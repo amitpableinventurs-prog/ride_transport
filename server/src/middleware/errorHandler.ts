@@ -1,12 +1,23 @@
 import type { NextFunction, Request, Response } from 'express'
 import mongoose from 'mongoose'
+import multer from 'multer'
 import { env } from '../config/env'
+import { HttpError } from '../utils/http'
 
 export function notFoundHandler(req: Request, res: Response) {
   res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` })
 }
 
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
+  if (err instanceof HttpError) {
+    res.status(err.status).json({ message: err.message, ...err.details })
+    return
+  }
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_FILE_SIZE' ? 'File is too large (maximum 5 MB)' : `Upload failed: ${err.message}`
+    res.status(400).json({ message })
+    return
+  }
   if (err instanceof mongoose.Error.CastError) {
     res.status(400).json({ message: `Invalid ${err.path}: ${String(err.value)}` })
     return

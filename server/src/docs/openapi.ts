@@ -42,9 +42,9 @@ const APPROVAL_STATUS = ['pending', 'verified', 'rejected'] as const
 const DOC_STATUS = ['pending', 'verified', 'rejected', 'expired'] as const
 const SERVICE_MODE = ['ride', 'transport'] as const
 const SERVICE_MODE_BOTH = ['ride', 'transport', 'both'] as const
-const BOOKING_STATUS = ['requested', 'accepted', 'arriving', 'started', 'in_transit', 'completed', 'cancelled'] as const
+const BOOKING_STATUS = ['scheduled', 'requested', 'no_rider_found', 'accepted', 'arriving', 'arrived', 'started', 'in_transit', 'completed', 'cancelled'] as const
 const CMS_SLUGS = ['about', 'contact', 'terms', 'privacy', 'cancellation', 'refund', 'rider_terms', 'partner_terms', 'faq'] as const
-const WALLET_REASONS = ['booking_earning', 'commission', 'recharge', 'refund', 'penalty', 'bonus', 'withdrawal', 'adjustment'] as const
+const WALLET_REASONS = ['booking_earning', 'booking_payment', 'tip', 'commission', 'recharge', 'refund', 'penalty', 'bonus', 'withdrawal', 'adjustment'] as const
 
 interface OpOptions {
   permission?: string
@@ -204,6 +204,401 @@ const appPaths = {
   },
 }
 
+// ---------------- Customer + rider apps (SRS §10.1-10.5) ----------------
+
+const place = obj({ lat: num({ example: 19.076 }), lng: num({ example: 72.8777 }), address: str({ example: 'Dadar, Mumbai' }) }, ['lat', 'lng'])
+const dropStop = obj(
+  {
+    lat: num({ example: 19.1 }),
+    lng: num({ example: 72.89 }),
+    address: str({ example: 'Kurla, Mumbai' }),
+    contactName: str({ description: 'Transport: receiver name' }),
+    contactPhone: str({ description: 'Transport: receiver mobile' }),
+  },
+  ['lat', 'lng'],
+)
+const tripBody = {
+  pickup: place,
+  drops: arr(dropStop),
+  drop: { ...place, description: 'Shorthand for a single drop (rides)' },
+  goods: obj({ description: str({ example: 'Documents' }), weightKg: num(), notes: str(), needsLoading: bool() }),
+}
+const gatewayOrder = obj({
+  orderId: str({ example: 'order_mock_1a2b3c' }),
+  amount: num(),
+  currency: str({ example: 'INR' }),
+  purpose: enumOf(['booking', 'wallet_topup', 'rider_dues']),
+  provider: enumOf(['mock', 'razorpay']),
+  key: str({ description: 'Razorpay key id for the checkout SDK' }),
+})
+const verifyBody = obj(
+  {
+    orderId: str(),
+    paymentId: str({ example: 'pay_29QQoUBi66xm2f' }),
+    signature: str({ description: 'Gateway signature. With PAYMENT_PROVIDER=mock (development) send `mock_success`.' }),
+  },
+  ['orderId', 'paymentId', 'signature'],
+)
+const bookingIdParam = pathParam('id', 'Booking id', oid())
+const binary = (description: string) => str({ format: 'binary', description })
+/** Same operation, but with a multipart/form-data body (file uploads). */
+const multipart = (operation: ReturnType<typeof op>, fields: Record<string, Schema>, required: string[]) => ({
+  ...operation,
+  requestBody: { required: required.length > 0, content: { 'multipart/form-data': { schema: obj(fields, required) } } },
+})
+const appOp = (tag: string, summary: string, opts: OpOptions = {}) => op(tag, summary, { app: true, ...opts })
+const TICKET_CATEGORIES = ['payment', 'booking', 'driver', 'vehicle', 'lost_item', 'refund', 'cancellation', 'technical'] as const
+const APP_LANGUAGES = ['en', 'hi', 'mr', 'gu', 'bn', 'ta', 'te', 'kn', 'ml', 'pa', 'or'] as const
+const RIDER_DOC_TYPES = ['driving_license', 'vehicle_rc', 'vehicle_insurance', 'aadhaar', 'pan', 'pollution_certificate', 'permit', 'police_verification'] as const
+
+// SOS, tickets and notifications are the same in both apps.
+const supportPaths = (tag: string) => ({
+  '/sos': {
+    post: appOp(tag, 'Raise SOS', {
+      description: 'Alerts admins live (`sos:alert` on the /admin socket) and SMSes the emergency contacts a map link.',
+      body: obj({ lat: num(), lng: num(), bookingId: oid('Optional; must be your booking'), note: str() }, ['lat', 'lng']),
+      status: 201,
+      errors: [400, 404],
+    }),
+  },
+  '/tickets': {
+    get: appOp(tag, 'My support tickets', { parameters: pageParams }),
+    post: appOp(tag, 'Raise a support ticket', {
+      body: obj({ subject: str(), category: enumOf(TICKET_CATEGORIES), description: str(), bookingId: oid() }, ['subject', 'category']),
+      status: 201,
+      errors: [400, 404],
+    }),
+  },
+  '/notifications': {
+    get: appOp(tag, 'Notification inbox', {
+      description: 'Personal notifications (marked read when returned) plus `announcements`: admin push broadcasts from the last 30 days.',
+      parameters: pageParams,
+    }),
+  },
+})
+
+const srsAuthPaths = {
+  '/otp/send': {
+    post: op('Auth', 'Send OTP to a mobile number', {
+      auth: false,
+      body: obj({ phone: str({ example: '9876543210' }), role: enumOf(['customer', 'rider']) }, ['phone', 'role']),
+      response: ref('AppOtpSent'),
+      errors: [400, 403, 429],
+    }),
+  },
+  '/otp/verify': {
+    post: op('Auth', 'Verify OTP; returns tokens + isNewUser', {
+      auth: false,
+      description:
+        'A new number gets an account immediately (`201`, `isNewUser: true`). The app then shows the Profile screen while `user.profileComplete` is false. New riders start as `approvalStatus: pending`.',
+      body: obj({ phone: str(), role: enumOf(['customer', 'rider']), otp: str({ pattern: '^\\d{6}$' }) }, ['phone', 'role', 'otp']),
+      response: obj({ isNewUser: bool(), accessToken: str(), refreshToken: str(), user: ref('AppUser') }),
+      errors: [400, 403, 429],
+    }),
+  },
+  '/refresh': {
+    post: op('Auth', 'New token pair from a refresh token', {
+      auth: false,
+      description: 'Refresh tokens are single-use: each call revokes the one sent and returns a new pair.',
+      body: ref('RefreshRequest'),
+      response: ref('TokenPair'),
+      errors: [401],
+    }),
+  },
+  '/logout': {
+    post: appOp('Auth', 'Revoke the refresh token and remove the FCM token', {
+      body: obj({ refreshToken: str(), fcmToken: str() }),
+      bodyRequired: false,
+      status: 204,
+    }),
+  },
+}
+
+const customerPaths = {
+  '/profile': {
+    get: appOp('Customer', 'Get profile', { response: ref('AppUser') }),
+    patch: multipart(
+      appOp('Customer', 'Update name, email, photo, language', {
+        description: 'JSON or multipart. Same fields as `/app/profile` plus `language` and `photoUrl`; upload a new photo as multipart `photo`.',
+        response: ref('AppUser'),
+        errors: [400],
+      }),
+      { name: str(), email: str(), language: enumOf(APP_LANGUAGES), photo: binary('JPEG/PNG/WebP up to 5 MB'), emergencyContact: str({ description: 'JSON string in multipart' }) },
+      [],
+    ),
+  },
+  '/saved-places': {
+    get: appOp('Customer', 'Saved places'),
+    post: appOp('Customer', 'Add a saved place', {
+      description: '`home` and `work` are unique: saving one replaces the previous. `other` needs a `name`. Up to 10 places.',
+      body: obj({ label: enumOf(['home', 'work', 'other']), name: str({ example: 'Gym' }), address: str(), lat: num(), lng: num() }, ['label', 'address', 'lat', 'lng']),
+      status: 201,
+      errors: [400],
+    }),
+  },
+  '/saved-places/{id}': { delete: appOp('Customer', 'Delete a saved place', { parameters: [idParam], status: 204, errors: [404] }) },
+  '/emergency-contacts': {
+    get: appOp('Customer', 'SOS contacts'),
+    put: appOp('Customer', 'Replace SOS contacts (1-3)', {
+      description: 'The first contact is also the Profile screen emergency contact.',
+      body: obj({ contacts: arr(obj({ name: str(), phone: str() }, ['name', 'phone'])) }, ['contacts']),
+      errors: [400],
+    }),
+  },
+  '/services': {
+    get: appOp('Customer', 'Ride + Transport categories at a location', {
+      description: 'Per category: `ridersNearby` and `etaMin` of the nearest online rider. `serviceable: false` outside every service area.',
+      parameters: [query('lat', 'Latitude', num()), query('lng', 'Longitude', num())],
+      errors: [400],
+    }),
+  },
+  '/fare-estimate': {
+    post: appOp('Customer', 'Fare per category for pickup, drops and goods', {
+      description:
+        'Rides have one drop; transport up to 5. Optional `mode`, `categoryKey`, `couponCode`, `scheduledAt`. Distance is estimated (straight line × 1.3) until a maps provider is added.',
+      body: obj({ ...tripBody, mode: enumOf(SERVICE_MODE), categoryKey: str(), couponCode: str(), scheduledAt: date() }, ['pickup']),
+      errors: [400, 422],
+    }),
+  },
+  '/coupons/validate': {
+    post: appOp('Customer', 'Check a coupon against an estimate', {
+      description: 'Always `200`; `valid: false` carries the reason.',
+      body: obj({ code: str({ example: 'WELCOME50' }), categoryKey: str(), fareTotal: num(), pickup: place }, ['code', 'categoryKey', 'fareTotal']),
+    }),
+  },
+  '/bookings': {
+    post: appOp('Customer', 'Create a Ride or Transport booking (now or scheduled)', {
+      description: [
+        'Needs a complete profile. Starts matching immediately (status `requested`) unless `scheduledAt` (30 min to 7 days ahead) is set.',
+        'The response has `startOtp` (and a per-stop `otp` for transport) for the customer to share; riders never see them.',
+        '`409` if another booking is ongoing. `402` for wallet payment without enough balance.',
+      ].join('\n\n'),
+      body: obj(
+        { ...tripBody, categoryKey: str({ example: 'bike' }), mode: enumOf(SERVICE_MODE), paymentMethod: enumOf(['cash', 'wallet', 'upi', 'card', 'netbanking']), couponCode: str(), scheduledAt: date() },
+        ['categoryKey', 'pickup'],
+      ),
+      status: 201,
+      errors: [400, 402, 403, 409, 422],
+    }),
+    get: appOp('Customer', 'Booking history', {
+      parameters: [...pageParams, query('mode', 'ride or transport', enumOf(SERVICE_MODE)), query('status', 'Comma-separated statuses', str({ example: 'completed,cancelled' })), ...reportRange],
+    }),
+  },
+  '/bookings/{id}': { get: appOp('Customer', 'Booking detail: rider, timeline, fare', { parameters: [bookingIdParam], errors: [404] }) },
+  '/bookings/{id}/track': { get: appOp('Customer', 'Rider live location + ETA (fallback to socket)', { parameters: [bookingIdParam], errors: [404] }) },
+  '/bookings/{id}/drop': {
+    patch: appOp('Customer', 'Change the drop during the trip', {
+      description: 'Re-prices the trip and emits `booking:fare_updated` to customer and rider.',
+      parameters: [bookingIdParam],
+      body: obj({ drop: place }, ['drop']),
+      errors: [400, 404, 409, 422],
+    }),
+  },
+  '/bookings/{id}/cancel': {
+    post: appOp('Customer', 'Cancel with reason; returns the charge applied', {
+      description:
+        'Free while searching and for `freeCancellationMinutes` (default 2) after a rider accepts. After that, or once the rider has arrived, the category cancellation fee is charged to the wallet and paid to the rider.',
+      parameters: [bookingIdParam],
+      body: obj({ reason: str() }),
+      bodyRequired: false,
+      errors: [404, 409],
+    }),
+  },
+  '/bookings/{id}/retry': { post: appOp('Customer', 'Retry the search after "no rider found"', { parameters: [bookingIdParam], errors: [404, 409] }) },
+  '/bookings/{id}/rating': {
+    post: appOp('Customer', 'Rate the rider and tip', {
+      description: 'The tip (₹1-500) is paid from the wallet to the rider.',
+      parameters: [bookingIdParam],
+      body: obj({ score: int({ minimum: 1, maximum: 5 }), comment: str(), tip: num() }, ['score']),
+      status: 201,
+      errors: [400, 402, 404, 409],
+    }),
+  },
+  '/bookings/{id}/invoice': { get: appOp('Customer', 'Invoice PDF link (valid 7 days)', { parameters: [bookingIdParam], errors: [404, 409] }) },
+  '/bookings/{id}/share': { post: appOp('Customer', 'Create a public tracking link', { parameters: [bookingIdParam], errors: [404, 409] }) },
+  '/bookings/{id}/call': {
+    post: appOp('Customer', 'Number to call the rider', {
+      description:
+        'Masked calling is not integrated yet: with TELEPHONY_PROVIDER=direct (development) this returns the real number with `masked: false`; production returns `503` until a provider is added.',
+      parameters: [bookingIdParam],
+      errors: [404, 409, 503],
+    }),
+  },
+  '/wallet': { get: appOp('Customer', 'Balance + transactions', { parameters: pageParams }) },
+  '/wallet/topup': {
+    post: appOp('Customer', 'Gateway order to add money (₹10-10,000)', { body: obj({ amount: num({ example: 500 }) }, ['amount']), response: gatewayOrder, status: 201, errors: [400, 503] }),
+  },
+  '/payments/order': {
+    post: appOp('Customer', 'Gateway order for a completed, unpaid booking', { body: obj({ bookingId: oid() }, ['bookingId']), response: gatewayOrder, status: 201, errors: [404, 409, 503] }),
+  },
+  '/payments/verify': {
+    post: appOp('Customer', 'Verify the gateway signature after payment', { description: 'Applies the payment once (booking marked paid, or wallet credited).', body: verifyBody, errors: [400, 404] }),
+  },
+  '/offers': { get: appOp('Customer', 'Active coupons and banners') },
+  ...supportPaths('Customer'),
+  '/account': {
+    delete: appOp('Customer', 'Request account deletion', { body: obj({ reason: str() }), bodyRequired: false, errors: [409] }),
+  },
+}
+
+const riderPaths = {
+  '/profile': {
+    get: appOp('Rider', 'Get profile', { response: ref('AppUser') }),
+    patch: multipart(appOp('Rider', 'Update profile', { description: 'Same fields as the customer profile.', response: ref('AppUser'), errors: [400] }), { name: str(), photo: binary('JPEG/PNG/WebP up to 5 MB') }, []),
+  },
+  '/onboarding/options': { get: appOp('Rider', 'Vehicle types, services and document types for onboarding') },
+  '/onboarding': {
+    post: appOp('Rider', 'Choose type (individual / partner code), vehicle type, services', {
+      body: obj(
+        { type: enumOf(['individual', 'partner']), partnerCode: str({ example: 'P1A2B3C' }), vehicleTypeId: oid(), services: arr(str({ example: 'bike' })), serviceType: enumOf(['rider', 'driver']) },
+        ['type', 'vehicleTypeId', 'services'],
+      ),
+      errors: [400, 409],
+    }),
+  },
+  '/documents': {
+    post: multipart(
+      appOp('Rider', 'Upload a document with number + expiry', {
+        description: 'Re-uploading a type replaces it and sends it back for review. Required: driving_license, vehicle_rc, vehicle_insurance, aadhaar.',
+        status: 201,
+        errors: [400],
+      }),
+      {
+        file: binary('JPEG/PNG/WebP/PDF up to 5 MB'),
+        docType: enumOf(RIDER_DOC_TYPES),
+        docNumber: str(),
+        expiryDate: str({ format: 'date', description: 'Required for licence, insurance, PUC and permit' }),
+      },
+      ['file', 'docType', 'docNumber'],
+    ),
+    get: appOp('Rider', 'Documents with verification status'),
+  },
+  '/vehicle': {
+    get: appOp('Rider', 'Current vehicle + pending change requests'),
+    post: appOp('Rider', 'Register a vehicle / request a vehicle change', {
+      description: 'Created inactive; goes live when an admin activates it (Fleet → Vehicles).',
+      body: obj(
+        { vehicleTypeId: oid(), categoryKey: str({ example: 'bike' }), registrationNumber: str({ example: 'MH12AB1234' }), model: str(), manufacturer: str() },
+        ['vehicleTypeId', 'categoryKey', 'registrationNumber', 'model'],
+      ),
+      status: 201,
+      errors: [400, 409],
+    }),
+  },
+  '/approval-status': { get: appOp('Rider', 'pending, under_review, approved or rejected + reasons') },
+  '/duty/online': {
+    post: appOp('Rider', 'Go online', {
+      description: '`403` not approved · `428` selfie due (`selfieRequired: true`) · `402` cash dues above `maxCashDues` · `409` no active vehicle.',
+      body: obj({ lat: num(), lng: num() }, ['lat', 'lng']),
+      errors: [400, 402, 403, 409, 428],
+    }),
+  },
+  '/duty/offline': { post: appOp('Rider', 'Go offline', { errors: [409] }) },
+  '/selfie-check': {
+    post: multipart(
+      appOp('Rider', 'Upload a selfie', {
+        description: 'No face-match provider is integrated yet: the selfie is stored for admin review and the check passes (`faceMatch: "not_configured"`).',
+        errors: [400],
+      }),
+      { selfie: binary('JPEG/PNG/WebP') },
+      ['selfie'],
+    ),
+  },
+  '/requests/current': { get: appOp('Rider', 'Pending request offered to this rider') },
+  '/requests/{bookingId}/accept': { post: appOp('Rider', 'Accept a request (409 if taken or expired)', { parameters: [pathParam('bookingId', 'Booking id', oid())], errors: [409] }) },
+  '/requests/{bookingId}/reject': { post: appOp('Rider', 'Reject a request', { parameters: [pathParam('bookingId', 'Booking id', oid())], status: 204, errors: [409] }) },
+  '/bookings/active': { get: appOp('Rider', 'Current trip') },
+  '/bookings': { get: appOp('Rider', 'Trip history', { parameters: [...pageParams, query('status', 'Comma-separated statuses'), ...reportRange] }) },
+  '/bookings/{id}/arrived': { post: appOp('Rider', 'Mark arrived at pickup', { parameters: [bookingIdParam], errors: [404, 409] }) },
+  '/bookings/{id}/start': {
+    post: multipart(appOp('Rider', 'Verify start/pickup OTP (+ goods photo)', { parameters: [bookingIdParam], errors: [400, 404, 409] }), { otp: str({ example: '4821' }), goodsPhoto: binary('Required for transport') }, ['otp']),
+  },
+  '/bookings/{id}/stops/{stopId}/complete': {
+    post: multipart(
+      appOp('Rider', 'Complete a transport drop with OTP + POD', { parameters: [bookingIdParam, pathParam('stopId', 'Stop id', oid())], errors: [400, 404, 409] }),
+      { otp: str(), pod: binary('Proof-of-delivery photo') },
+      ['otp', 'pod'],
+    ),
+  },
+  '/bookings/{id}/complete': {
+    post: appOp('Rider', 'End trip; returns the final fare', {
+      description: 'Adds waiting charges beyond `freeWaitingMinutes`. Wallet bookings are charged now; `collectCash` is the amount to collect for cash bookings.',
+      parameters: [bookingIdParam],
+      errors: [404, 409],
+    }),
+  },
+  '/bookings/{id}/cash-collected': {
+    post: appOp('Rider', 'Confirm cash received', { description: 'Marks the booking paid; the platform commission is added to the rider wallet as dues.', parameters: [bookingIdParam], errors: [404, 409] }),
+  },
+  '/bookings/{id}/cancel': {
+    post: appOp('Rider', 'Cancel with reason', {
+      description: 'Allowed before the trip starts; the booking goes back to searching for another rider.',
+      parameters: [bookingIdParam],
+      body: obj({ reason: str() }, ['reason']),
+      status: 204,
+      errors: [400, 409],
+    }),
+  },
+  '/bookings/{id}/rating': {
+    post: appOp('Rider', 'Rate the customer', { parameters: [bookingIdParam], body: obj({ score: int({ minimum: 1, maximum: 5 }), comment: str() }, ['score']), status: 201, errors: [400, 404, 409] }),
+  },
+  '/earnings': { get: appOp('Rider', 'Earnings summary and per-trip breakdown', { description: 'Defaults to the last 7 days.', parameters: reportRange }) },
+  '/wallet': { get: appOp('Rider', 'Balance, dues, transactions', { parameters: pageParams }) },
+  '/wallet/pay-dues': {
+    post: appOp('Rider', 'Gateway order to clear dues', { body: obj({ amount: num({ description: 'Defaults to all dues' }) }), bodyRequired: false, response: gatewayOrder, status: 201, errors: [400, 409, 503] }),
+  },
+  '/payments/verify': { post: appOp('Rider', 'Verify a dues payment', { body: verifyBody, errors: [400, 404] }) },
+  '/withdrawals': {
+    post: appOp('Rider', 'Request a payout to bank/UPI', {
+      description: 'Minimum `minWithdrawalAmount` (default ₹100). The amount is held from the wallet; one payout in progress at a time.',
+      body: obj(
+        { amount: num(), method: enumOf(['bank', 'upi']), upiId: str({ example: 'name@okaxis' }), bankAccount: obj({ holderName: str(), accountNumber: str(), ifsc: str({ example: 'HDFC0001234' }) }) },
+        ['amount', 'method'],
+      ),
+      status: 201,
+      errors: [400, 402, 409],
+    }),
+    get: appOp('Rider', 'Payout history', { parameters: pageParams }),
+  },
+  '/incentives': { get: appOp('Rider', 'Active incentive schemes + progress') },
+  '/heatmap': {
+    get: appOp('Rider', 'Demand zones', {
+      description: 'Open requests vs online riders per ~1 km cell over the last hour, within 10 km.',
+      parameters: [query('lat', 'Defaults to your last location', num()), query('lng', 'Defaults to your last location', num())],
+    }),
+  },
+  ...supportPaths('Rider'),
+}
+
+const commonPaths = {
+  '/common/app-config': { get: op('Common', 'Min version, feature flags, support numbers', { auth: false, parameters: [query('app', 'customer or rider', enumOf(['customer', 'rider']))] }) },
+  '/common/cms/{slug}': { get: op('Common', 'Terms, privacy, FAQs', { auth: false, parameters: [pathParam('slug', 'Page', enumOf(CMS_SLUGS))], errors: [404] }) },
+  '/common/devices': {
+    post: appOp('Common', 'Register an FCM token', { body: obj({ token: str(), platform: enumOf(['android', 'ios', 'web']), appVersion: str() }, ['token']), status: 201, errors: [400] }),
+  },
+  '/public/track/{token}': { get: op('Public', 'Public tracking page data (share link)', { auth: false, parameters: [pathParam('token', 'Share token')], errors: [404] }) },
+  '/public/invoices/{token}': { get: op('Public', 'Invoice PDF', { auth: false, parameters: [pathParam('token', 'Invoice token')], errors: [404] }) },
+}
+
+const SOCKET_DOCS = [
+  '### Socket.IO (SRS §10.6)',
+  'Connect to `/customer`, `/rider` (app access token) or `/admin` (admin access token) with `auth: { token }`. Clients join `booking:<id>` for their active booking automatically; emit `booking:join` `{ bookingId }` to join one explicitly.',
+  '',
+  '| Event | Direction | Payload |',
+  '|---|---|---|',
+  '| `rider:location` | Rider → Server | lat, lng, heading, speed, timestamp |',
+  '| `booking:request` | Server → Rider | bookingId, mode, pickup, drop, stops, earning, expiresAt |',
+  '| `booking:request_expired` | Server → Rider | bookingId |',
+  '| `booking:status` | Server → Customer, Admin | bookingId, status, timestamp |',
+  '| `booking:rider_assigned` | Server → Customer | rider, vehicle, etaMin |',
+  '| `booking:rider_location` | Server → Customer | lat, lng, heading, etaMin |',
+  '| `booking:fare_updated` | Server → Customer, Rider | fare, distanceKm, drop |',
+  '| `booking:cancelled` | Server → both | by, reason, charge |',
+  '| `chat:message` | both ways | bookingId, text (the ack returns the stored message) |',
+  '| `sos:alert` | Server → Admin | sosId, user, booking, location |',
+  '| `admin:live_riders` | Server → Admin | zoneId, zoneName, riders[] (every 5 s) |',
+].join('\n')
+
 export const openApiSpec = {
   openapi: '3.0.3',
   info: {
@@ -220,14 +615,23 @@ export const openApiSpec = {
       'Most admin endpoints also need a role permission, shown in each description; a missing permission returns `403`.',
       '',
       '### Mobile app APIs',
-      '`POST /app/auth/otp/send` → `POST /app/auth/otp/verify` → (new users) `POST /app/auth/register`. Paste the app `accessToken` into **appBearerAuth**. App and admin tokens are not interchangeable.',
+      'Customer and rider apps (SRS §10): `POST /auth/otp/send` → `POST /auth/otp/verify` with `role: customer | rider`, then `/customer/*` or `/rider/*`. Paste the app `accessToken` into **appBearerAuth**. App and admin tokens are not interchangeable.',
+      '',
+      'The earlier `/app/*` APIs (with a separate `/app/auth/register` step) still work for existing builds.',
       '',
       'In development the OTP is also returned as `devOtp` and printed in the server console. It is never returned in production.',
+      '',
+      SOCKET_DOCS,
     ].join('\n'),
   },
   servers: [{ url: `http://localhost:${env.port}/api/v1`, description: 'Local' }],
   security: [{ bearerAuth: [] }],
   tags: [
+    { name: 'Auth', description: 'SRS §10.1: OTP login for the customer and rider apps' },
+    { name: 'Customer', description: 'SRS §10.2: customer app' },
+    { name: 'Rider', description: 'SRS §10.3: rider app' },
+    { name: 'Common', description: 'SRS §10.5: app config, CMS, push devices' },
+    { name: 'Public', description: 'Pages opened from shared links, no login' },
     { name: 'App Auth', description: 'Phone + OTP login for the customer, rider/driver and partner apps' },
     { name: 'App Profile', description: 'The app Profile screen: name, email, gender, date of birth, emergency contact' },
     { name: 'Admin Auth', description: 'Admin email/password login with an OTP second step' },
@@ -275,7 +679,11 @@ export const openApiSpec = {
       E401: { description: 'Missing, invalid or expired token', ...json(ref('Error')) },
       E403: { description: 'Missing permission', ...json(ref('Error')) },
       E404: { description: 'Not found', ...json(ref('Error')) },
-      E409: { description: 'Duplicate', ...json(ref('Error')) },
+      E402: { description: 'Payment needed (insufficient wallet balance, or dues to clear)', ...json(ref('Error')) },
+      E409: { description: 'Conflict: duplicate, or not allowed in the current state', ...json(ref('Error')) },
+      E422: { description: 'Location not serviceable', ...json(ref('Error')) },
+      E428: { description: 'Selfie check due before going online', ...json(ref('Error')) },
+      E503: { description: 'Provider not configured', ...json(ref('Error')) },
       E429: { description: 'Rate limited (too many attempts or OTP requests)', ...json(ref('OtpError')) },
     },
     schemas: {
@@ -938,6 +1346,10 @@ export const openApiSpec = {
     },
   },
   paths: {
+    ...prefixPaths('/auth', srsAuthPaths),
+    ...prefixPaths('/customer', customerPaths),
+    ...prefixPaths('/rider', riderPaths),
+    ...commonPaths,
     ...prefixPaths('/app', appPaths),
     ...prefixPaths('/admin', {
     // ---------------- Auth ----------------

@@ -48,9 +48,14 @@ export async function updateDriver(req: Request, res: Response) {
   const body = req.body as Partial<{
     approvalStatus: 'pending' | 'verified' | 'rejected'
     status: 'active' | 'suspended' | 'blocked'
+    rejectionReason: string
   }>
 
-  if (body.approvalStatus !== undefined) driver.approvalStatus = body.approvalStatus
+  if (body.approvalStatus !== undefined) {
+    driver.approvalStatus = body.approvalStatus
+    // Shown to the rider in the app's approval status screen.
+    driver.rejectionReason = body.approvalStatus === 'rejected' ? body.rejectionReason?.trim() || undefined : undefined
+  }
   if (body.status !== undefined) driver.status = body.status
   await driver.save()
 

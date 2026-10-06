@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
 import { Settings } from '../models/Settings'
-import { verifyAppAccessToken } from '../utils/jwt'
+import { verifyAppAccessToken, type AppUserType } from '../utils/jwt'
 import { findAppUserById, isAppUserActive } from '../utils/appUsers'
 
 export async function requireAppAuth(req: Request, res: Response, next: NextFunction) {
@@ -20,6 +20,17 @@ export async function requireAppAuth(req: Request, res: Response, next: NextFunc
 
   req.appUser = user
   next()
+}
+
+/** Limits a router to one kind of app account (the customer app vs the rider app). Use after requireAppAuth. */
+export function requireAppUserType(type: AppUserType) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.appUser?.type !== type) {
+      res.status(403).json({ message: `This API is only available to ${type === 'driver' ? 'rider' : type} accounts` })
+      return
+    }
+    next()
+  }
 }
 
 // Settings → Maintenance mode takes the mobile apps offline without affecting the admin panel.

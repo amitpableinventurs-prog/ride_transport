@@ -10,16 +10,27 @@ import { PermissionGate } from '@/components/common/PermissionGate'
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
 
-const ALL_STATUSES: BookingStatus[] = ['requested', 'accepted', 'arriving', 'started', 'in_transit', 'completed', 'cancelled']
-const FARE_LINES: (keyof Booking['fare'])[] = ['base', 'distance', 'time', 'waiting', 'night', 'platformFee', 'tax', 'discount']
+const ALL_STATUSES: BookingStatus[] = [
+  'scheduled',
+  'requested',
+  'no_rider_found',
+  'accepted',
+  'arriving',
+  'arrived',
+  'started',
+  'in_transit',
+  'completed',
+  'cancelled',
+]
+const FARE_LINES: (keyof Booking['fare'])[] = ['base', 'distance', 'time', 'waiting', 'night', 'extraStops', 'loading', 'platformFee', 'tax', 'discount']
 
 type BadgeTone = 'success' | 'warning' | 'danger' | 'neutral' | 'info'
 
 function statusTone(status: string): BadgeTone {
   if (status === 'completed') return 'success'
-  if (status === 'cancelled') return 'danger'
-  if (status === 'requested') return 'neutral'
-  if (status === 'accepted' || status === 'arriving') return 'info'
+  if (status === 'cancelled' || status === 'no_rider_found') return 'danger'
+  if (status === 'requested' || status === 'scheduled') return 'neutral'
+  if (status === 'accepted' || status === 'arriving' || status === 'arrived') return 'info'
   return 'warning'
 }
 

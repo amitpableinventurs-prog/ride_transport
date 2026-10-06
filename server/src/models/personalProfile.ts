@@ -3,7 +3,7 @@ import { Schema } from 'mongoose'
 export const GENDERS = ['male', 'female', 'other'] as const
 export type Gender = (typeof GENDERS)[number]
 
-const emergencyContactSchema = new Schema(
+export const emergencyContactSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     phone: { type: String, required: true },
@@ -17,4 +17,6 @@ export const personalProfileFields = {
   gender: { type: String, enum: GENDERS },
   dateOfBirth: { type: Date },
   emergencyContact: { type: emergencyContactSchema, default: undefined },
+  photoUrl: { type: String },
+  language: { type: String, default: 'en' },
 }

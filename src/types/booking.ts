@@ -16,7 +16,17 @@ export interface ServiceCategory {
   updatedAt: string
 }
 
-export type BookingStatus = 'requested' | 'accepted' | 'arriving' | 'started' | 'in_transit' | 'completed' | 'cancelled'
+export type BookingStatus =
+  | 'scheduled'
+  | 'requested'
+  | 'no_rider_found'
+  | 'accepted'
+  | 'arriving'
+  | 'arrived'
+  | 'started'
+  | 'in_transit'
+  | 'completed'
+  | 'cancelled'
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded'
 export type PaymentMethod = 'cash' | 'upi' | 'card' | 'wallet' | 'netbanking'
 
@@ -59,6 +69,9 @@ export interface BookingFare {
   platformFee: number
   tax: number
   discount: number
+  extraStops?: number
+  loading?: number
+  tip?: number
   total: number
 }
 

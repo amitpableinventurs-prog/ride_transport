@@ -23,8 +23,8 @@ function defaultRange() {
 
 function statusTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' {
   if (status === 'completed') return 'success'
-  if (status === 'cancelled') return 'danger'
-  if (['accepted', 'arriving', 'started', 'in_transit'].includes(status)) return 'warning'
+  if (status === 'cancelled' || status === 'no_rider_found') return 'danger'
+  if (['accepted', 'arriving', 'arrived', 'started', 'in_transit'].includes(status)) return 'warning'
   return 'neutral'
 }
 
@@ -90,9 +90,12 @@ export function BookingReportPage() {
           className="rounded-lg border border-navy-100 px-3 py-2 text-sm text-navy-700 outline-none focus:border-navy-400"
         >
           <option value="">All statuses</option>
+          <option value="scheduled">Scheduled</option>
           <option value="requested">Requested</option>
+          <option value="no_rider_found">No Rider Found</option>
           <option value="accepted">Accepted</option>
           <option value="arriving">Arriving</option>
+          <option value="arrived">Arrived</option>
           <option value="started">Started</option>
           <option value="in_transit">In Transit</option>
           <option value="completed">Completed</option>

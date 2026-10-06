@@ -77,6 +77,8 @@ export interface Wallet {
 export type WalletTransactionType = 'credit' | 'debit'
 export type WalletTransactionReason =
   | 'booking_earning'
+  | 'booking_payment'
+  | 'tip'
   | 'commission'
   | 'recharge'
   | 'refund'

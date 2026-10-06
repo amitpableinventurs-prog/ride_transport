@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy-50: #eef1f6;
+  --color-navy-100: #d4dbe8;
+  --color-navy-200: #a9b7d1;
+  --color-navy-300: #7e93ba;
+  --color-navy-400: #4a5f8f;
+  --color-navy-500: #1f2f52;
+  --color-navy-600: #182541;
+  --color-navy-700: #121c33;
+  --color-navy-800: #0c1424;
+  --color-navy-900: #060a14;
+
+  --color-brand-orange: #f5820c;
+  --color-brand-orange-dark: #d96e04;
+  --color-brand-green: #16a34a;
+  --color-brand-green-dark: #0f7a37;
+  --color-brand-red: #dc2626;
+  --color-brand-bg: #f6f7fb;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-brand-bg);
+  font-family: var(--font-sans);
+  color: var(--color-navy-800);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-navy-200);
+  border-radius: 9999px;
+}
+
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.12) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: rgb(255 255 255 / 0.12);
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(255 255 255 / 0.25);
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-navy-100 px-3.5 py-2.5 text-sm text-navy-800 outline-none transition-colors focus:border-navy-400 focus:ring-2 focus:ring-navy-100 disabled:bg-navy-50 disabled:text-navy-400;
+  }
+}

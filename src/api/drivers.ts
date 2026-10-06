@@ -1,0 +1,22 @@
+import { apiClient } from './client'
+import type { ApprovalStatus, Driver, PaginatedResult, ServiceType, UserStatus } from '@/types/entities'
+
+export async function fetchDrivers(params: {
+  page?: number
+  limit?: number
+  q?: string
+  serviceType?: ServiceType
+  status?: UserStatus
+  approvalStatus?: ApprovalStatus
+} = {}): Promise<PaginatedResult<Driver>> {
+  const { data } = await apiClient.get<PaginatedResult<Driver>>('/users/drivers', { params })
+  return data
+}
+
+export async function updateDriver(
+  id: string,
+  patch: Partial<{ approvalStatus: ApprovalStatus; status: UserStatus }>,
+): Promise<Driver> {
+  const { data } = await apiClient.patch<Driver>(`/users/drivers/${id}`, patch)
+  return data
+}

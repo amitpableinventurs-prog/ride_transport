@@ -1,5 +1,6 @@
 // Booking money flow and serialization shared by the customer and rider apps.
 import crypto from 'crypto'
+import { awardReferralReward } from '../utils/referral'
 import type { HydratedDocument, Types } from 'mongoose'
 import { Booking, type BookingDocument } from '../models/Booking'
 import { Customer } from '../models/Customer'
@@ -127,6 +128,7 @@ export async function completeTrip(bookingId: string, driverId: Types.ObjectId, 
     Driver.updateOne({ _id: booking.driver }, { $inc: { totalTrips: 1 }, $set: { onlineStatus: 'online' } }),
     Customer.updateOne({ _id: booking.customer }, { $inc: { totalBookings: 1 } }),
   ])
+  await awardReferralReward(booking.customer).catch((err) => console.error('[referral] reward failed', err))
 
   // Wallet bookings are charged straight away; cash waits for the rider, online for the gateway.
   if (fare.total <= 0) {

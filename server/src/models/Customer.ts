@@ -29,6 +29,10 @@ const customerSchema = new Schema(
     savedPlaces: { type: [savedPlaceSchema], default: [] },
     // SOS contacts (max 3). emergencyContact mirrors the first one for the Profile screen.
     emergencyContacts: { type: [emergencyContactSchema], default: [] },
+    // Refer & Earn: own shareable code, who referred this customer, and whether the first-ride reward was paid.
+    referralCode: { type: String, unique: true, sparse: true, uppercase: true, trim: true },
+    referredBy: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
+    referralRewardedAt: { type: Date },
     deletionRequestedAt: { type: Date },
     deletionReason: { type: String },
   },

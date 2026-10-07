@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import * as account from '../../controllers/customer/account.controller'
+import * as home from '../../controllers/customer/home.controller'
 import * as bookings from '../../controllers/customer/bookings.controller'
 import * as payments from '../../controllers/customer/payments.controller'
 import * as profile from '../../controllers/app/profile.controller'
@@ -14,6 +15,13 @@ router.use(rejectDuringMaintenance, requireAppAuth, requireAppUserType('customer
 
 router.get('/profile', profile.getProfile)
 router.patch('/profile', singleUpload('profile', 'photo', { imagesOnly: true }), profile.updateProfile)
+
+router.get('/home', home.getHome)
+router.get('/recent-places', home.listRecentPlaces)
+router.get('/places/search', home.searchPlaces)
+router.get('/places/reverse', home.reverseGeocode)
+router.get('/referral', home.getReferral)
+router.post('/referral/apply', home.applyReferral)
 
 router.get('/saved-places', account.listSavedPlaces)
 router.post('/saved-places', account.addSavedPlace)

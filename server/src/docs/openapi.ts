@@ -108,102 +108,6 @@ const reportRange = [
 const prefixPaths = (prefix: string, paths: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(paths).map(([path, item]) => [`${prefix}${path}`, item]))
 
-const appPhoneBody = {
-  phone: str({ example: '9876543210', description: '10-digit Indian mobile; +91 / 0 prefixes and spaces are accepted' }),
-  userType: enumOf(['customer', 'driver', 'partner']),
-}
-
-// Mobile-app APIs (Flutter customer / rider-driver / partner apps), mounted at /api/v1/app.
-const appPaths = {
-  '/auth/otp/send': {
-    post: op('App Auth', 'Send a login OTP by SMS', {
-      auth: false,
-      description: [
-        'Step 1 of phone login and sign-up. Works for new and existing numbers.',
-        'Resend cooldown `OTP_RESEND_COOLDOWN_SECONDS` (default 30s); at most `OTP_MAX_SENDS_PER_HOUR` (default 5) sends per number per hour.',
-        'Blocked/suspended accounts get `403`. All app APIs return `503` while Settings → Maintenance mode is on.',
-      ].join('\n\n'),
-      body: obj(appPhoneBody, ['phone', 'userType']),
-      response: ref('AppOtpSent'),
-      errors: [400, 403, 429],
-    }),
-  },
-  '/auth/otp/resend': {
-    post: op('App Auth', 'Resend the login OTP', {
-      auth: false,
-      description: 'Same as `/auth/otp/send`: issues a fresh code and invalidates the previous one.',
-      body: obj(appPhoneBody, ['phone', 'userType']),
-      response: ref('AppOtpSent'),
-      errors: [400, 403, 429],
-    }),
-  },
-  '/auth/otp/verify': {
-    post: op('App Auth', 'Verify the OTP and log in', {
-      auth: false,
-      description: [
-        'Existing user: `isNewUser: false` with tokens.',
-        'New number: `isNewUser: true` with a `registrationToken` (valid 30 min) for `/auth/register`.',
-        'Wrong codes return `attemptsLeft`; after 5 wrong attempts a new OTP must be requested.',
-      ].join('\n\n'),
-      body: obj({ ...appPhoneBody, otp: str({ example: '123456', pattern: '^\\d{6}$' }) }, ['phone', 'userType', 'otp']),
-      response: { oneOf: [ref('AppAuthExistingUser'), ref('AppAuthNewUser')] },
-      errors: [400, 403, 429],
-    }),
-  },
-  '/auth/register': {
-    post: op('App Auth', 'Complete sign-up for a new phone number', {
-      auth: false,
-      description: [
-        'Required fields depend on the `userType` the OTP was verified for:',
-        '',
-        'This is the app **Profile** screen for customers and riders/drivers.',
-        '',
-        '- **customer**: `name`, `emergencyContact` (optional `email`, `gender`, `dateOfBirth`, `city`)',
-        '- **driver**: `name`, `emergencyContact`, `serviceType` (`rider` or `driver`) (optional `email`, `gender`, `dateOfBirth`; must be 18+ if given). Starts as `approvalStatus: pending` until an admin verifies documents.',
-        '- **partner**: `companyName`, `ownerName` (optional `email`, `businessRegNo`, `taxId`). Starts as `pending`.',
-      ].join('\n'),
-      body: ref('AppRegisterRequest'),
-      response: ref('AppAuthTokens'),
-      status: 201,
-      errors: [400, 409],
-    }),
-  },
-  '/auth/refresh': {
-    post: op('App Auth', 'Exchange an app refresh token for a new token pair', {
-      auth: false,
-      body: ref('RefreshRequest'),
-      response: ref('TokenPair'),
-      errors: [401],
-    }),
-  },
-  '/auth/me': {
-    get: op('App Auth', 'Profile of the logged-in app user', { app: true, response: ref('AppUser') }),
-  },
-  '/auth/logout': {
-    post: op('App Auth', 'Log out (the app discards its tokens)', { app: true, status: 204 }),
-  },
-  '/profile': {
-    get: op('App Profile', 'Get the Profile screen data', {
-      app: true,
-      description: 'Same record as `/auth/me`. `profileComplete: false` means the app should show the Profile screen (name or emergency contact missing).',
-      response: ref('AppUser'),
-    }),
-    patch: op('App Profile', 'Update the profile', {
-      app: true,
-      description: [
-        'Send only the fields that changed. Customers and riders/drivers: `name`, `email`, `gender`, `dateOfBirth`, `emergencyContact` (plus `city` for customers).',
-        'Send `null` or `""` for `email`, `gender` or `dateOfBirth` to clear them. The emergency contact can be replaced but not removed.',
-        'The phone number is the OTP-verified login and cannot be changed here; sending the same number back is allowed.',
-        'Partners: `companyName`, `ownerName`, `email`, `businessRegNo`, `taxId`.',
-      ].join('\n\n'),
-      body: ref('AppProfileUpdate'),
-      bodyRequired: false,
-      response: ref('AppUser'),
-      errors: [400, 409],
-    }),
-  },
-}
-
 // ---------------- Customer + rider apps (SRS §10.1-10.5) ----------------
 
 const place = obj({ lat: num({ example: 19.076 }), lng: num({ example: 72.8777 }), address: str({ example: 'Dadar, Mumbai' }) }, ['lat', 'lng'])
@@ -319,13 +223,52 @@ const customerPaths = {
     get: appOp('Customer', 'Get profile', { response: ref('AppUser') }),
     patch: multipart(
       appOp('Customer', 'Update name, email, photo, language', {
-        description: 'JSON or multipart. Same fields as `/app/profile` plus `language` and `photoUrl`; upload a new photo as multipart `photo`.',
+        description: 'JSON or multipart. Fields: `name`, `email`, `gender`, `dateOfBirth`, `emergencyContact`, `city`, plus `language` and `photoUrl`; upload a new photo as multipart `photo`.',
         response: ref('AppUser'),
         errors: [400],
       }),
       { name: str(), email: str(), language: enumOf(APP_LANGUAGES), photo: binary('JPEG/PNG/WebP up to 5 MB'), emergencyContact: str({ description: 'JSON string in multipart' }) },
       [],
     ),
+  },
+  '/home': {
+    get: appOp('Customer', 'Home screen summary', {
+      description:
+        'Name and initial for the greeting, serviceability and enabled modes at `lat`/`lng` (both optional), any open booking, saved places and the latest recent places.',
+      parameters: [query('lat', 'Latitude', num()), query('lng', 'Longitude', num())],
+    }),
+  },
+  '/recent-places': {
+    get: appOp('Customer', 'Recent destinations', {
+      description: 'Distinct drop-offs from past bookings, newest first. `favouriteId` is set when the place is saved (filled heart): tap to un-favourite with `DELETE /saved-places/{id}`, otherwise favourite it with `POST /saved-places` (label `other`).',
+      parameters: [query('limit', 'Default 6, max 20', int())],
+    }),
+  },
+  '/places/search': {
+    get: appOp('Customer', 'Search saved and recent places', {
+      description: 'Pickup/drop search box. Matches the customer\'s own places only; use the map SDK for city-wide search.',
+      parameters: [query('q', 'Text to match in name or address (required)'), query('lat', 'Latitude for `distanceKm`', num()), query('lng', 'Longitude for `distanceKm`', num())],
+      errors: [400],
+    }),
+  },
+  '/places/reverse': {
+    get: appOp('Customer', 'Address under the pickup pin', {
+      description: 'Known address within 200 m (saved or recent), else `address: null` with the service-area `city`. A geocoding provider is not wired in yet.',
+      parameters: [query('lat', 'Latitude', num()), query('lng', 'Longitude', num())],
+      errors: [400],
+    }),
+  },
+  '/referral': {
+    get: appOp('Customer', 'Refer & Earn screen', {
+      description: 'Own referral code (created on first call), share text, reward amounts, how-it-works steps, stats and the list of invited friends.',
+    }),
+  },
+  '/referral/apply': {
+    post: appOp('Customer', 'Apply a friend\'s referral code', {
+      description: 'Once per customer, before their first completed ride. When that ride completes, both wallets get a `referral` credit (amounts in platform settings).',
+      body: obj({ code: str({ example: 'RIDE6655' }) }, ['code']),
+      errors: [400, 404, 409, 422],
+    }),
   },
   '/saved-places': {
     get: appOp('Customer', 'Saved places'),
@@ -605,7 +548,7 @@ export const openApiSpec = {
     title: 'Rider & Transport Admin API',
     version: '1.0.0',
     description: [
-      'REST API for the AnZ Cabs admin panel (`/admin/*`) and the Flutter mobile apps (`/app/*`).',
+      'REST API for the AnZ Cabs admin panel (`/admin/*`) and the customer and rider mobile apps (`/customer/*`, `/rider/*`).',
       '',
       '### Admin APIs',
       '1. `POST /admin/auth/login` with email + password. When admin OTP is on (Settings → Security, default on), the response has `otpRequired: true` and an `otpToken`, and a 6-digit OTP is sent by SMS to the phone on the admin account.',
@@ -616,8 +559,6 @@ export const openApiSpec = {
       '',
       '### Mobile app APIs',
       'Customer and rider apps (SRS §10): `POST /auth/otp/send` → `POST /auth/otp/verify` with `role: customer | rider`, then `/customer/*` or `/rider/*`. Paste the app `accessToken` into **appBearerAuth**. App and admin tokens are not interchangeable.',
-      '',
-      'The earlier `/app/*` APIs (with a separate `/app/auth/register` step) still work for existing builds.',
       '',
       'In development the OTP is also returned as `devOtp` and printed in the server console. It is never returned in production.',
       '',
@@ -632,8 +573,6 @@ export const openApiSpec = {
     { name: 'Rider', description: 'SRS §10.3: rider app' },
     { name: 'Common', description: 'SRS §10.5: app config, CMS, push devices' },
     { name: 'Public', description: 'Pages opened from shared links, no login' },
-    { name: 'App Auth', description: 'Phone + OTP login for the customer, rider/driver and partner apps' },
-    { name: 'App Profile', description: 'The app Profile screen: name, email, gender, date of birth, emergency contact' },
     { name: 'Admin Auth', description: 'Admin email/password login with an OTP second step' },
     { name: 'Dashboard' },
     { name: 'Admins' },
@@ -1350,7 +1289,6 @@ export const openApiSpec = {
     ...prefixPaths('/customer', customerPaths),
     ...prefixPaths('/rider', riderPaths),
     ...commonPaths,
-    ...prefixPaths('/app', appPaths),
     ...prefixPaths('/admin', {
     // ---------------- Auth ----------------
     '/auth/login': {

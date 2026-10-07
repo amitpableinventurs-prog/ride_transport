@@ -22,7 +22,10 @@ export const env = {
   // Uploaded documents, selfies and delivery photos (served at /uploads).
   uploadDir: process.env.UPLOAD_DIR ?? path.resolve(process.cwd(), 'uploads'),
   mongoUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/rideflow_admin'),
-  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  // In development any localhost port is allowed, since Vite moves to the next free port when 5173 is taken.
+  corsOrigin: isProduction
+    ? (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
+    : [process.env.CORS_ORIGIN ?? 'http://localhost:5173', /^http:\/\/(localhost|127\.0\.0\.1):\d+$/],
   jwtAccessSecret,
   jwtRefreshSecret,
   // Mobile-app tokens use their own secrets so they can never pass admin auth.

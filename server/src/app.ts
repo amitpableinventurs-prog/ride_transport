@@ -6,7 +6,6 @@ import morgan from 'morgan'
 import swaggerUi from 'swagger-ui-express'
 import { env } from './config/env'
 import adminRoutes from './routes'
-import appRoutes from './routes/app'
 import appAuthRoutes from './routes/app/auth.routes'
 import customerRoutes from './routes/app/customer.routes'
 import riderRoutes from './routes/app/rider.routes'
@@ -37,13 +36,12 @@ app.use(
 )
 
 app.use('/api/v1/admin', adminRoutes)
-// Customer and rider apps (SRS §10). /api/v1/app is the earlier app API, kept for existing builds.
+// Customer and rider apps (SRS §10).
 app.use('/api/v1/auth', appAuthRoutes)
 app.use('/api/v1/customer', customerRoutes)
 app.use('/api/v1/rider', riderRoutes)
 app.use('/api/v1/common', commonRouter)
 app.use('/api/v1/public', publicRouter)
-app.use('/api/v1/app', appRoutes)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

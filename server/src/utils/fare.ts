@@ -1,7 +1,20 @@
-import type { Types } from 'mongoose'
+import type { HydratedDocument, Types } from 'mongoose'
 import { PricingRule, type PricingRuleDocument } from '../models/PricingRule'
-import { CommissionRule } from '../models/CommissionRule'
+import { CommissionRule, type CommissionRuleDocument } from '../models/CommissionRule'
+import { TtlCache } from './cache'
 import { roundMoney } from './http'
+
+// Pricing and commission rules are read for every fare estimate and trip but change only when an admin edits them.
+// Cached for 10 seconds (and cleared at once after an admin change, see clearFareCaches).
+type PricingRuleDoc = HydratedDocument<PricingRuleDocument> | null
+const ruleCache = new TtlCache<PricingRuleDoc>(10_000, 500)
+const commissionCache = new TtlCache<CommissionRuleDoc[]>(10_000, 100)
+type CommissionRuleDoc = HydratedDocument<CommissionRuleDocument>
+
+export function clearFareCaches() {
+  ruleCache.clear()
+  commissionCache.clear()
+}
 
 export interface FareBreakdown {
   base: number
@@ -33,7 +46,11 @@ const NIGHT_START_HOUR = 22
 const NIGHT_END_HOUR = 6
 
 /** The city-specific pricing rule for a category, falling back to the global (no service area) rule. */
-export async function findPricingRule(categoryKey: string, serviceAreaId?: Types.ObjectId | null) {
+export function findPricingRule(categoryKey: string, serviceAreaId?: Types.ObjectId | null) {
+  return ruleCache.get(`${categoryKey}:${serviceAreaId ?? 'global'}`, () => loadPricingRule(categoryKey, serviceAreaId))
+}
+
+async function loadPricingRule(categoryKey: string, serviceAreaId?: Types.ObjectId | null) {
   const base = { categoryKey, status: 'active', effectiveFrom: { $lte: new Date() } }
   if (serviceAreaId) {
     const local = await PricingRule.findOne({ ...base, serviceArea: serviceAreaId }).sort({ effectiveFrom: -1 })
@@ -44,7 +61,8 @@ export async function findPricingRule(categoryKey: string, serviceAreaId?: Types
 
 function isNight(at: Date): boolean {
   // Pricing follows Indian local time regardless of the server's timezone.
-  const hour = Number(new Intl.DateTimeFormat('en-IN', { hour: 'numeric', hourCycle: 'h23', timeZone: 'Asia/Kolkata' }).format(at))
+  // India has no daylight saving: local time is always UTC+5:30 (this avoids a slow Intl formatter on every fare).
+  const hour = Math.floor(((at.getUTCHours() * 60 + at.getUTCMinutes() + 330) % 1440) / 60)
   return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR
 }
 
@@ -86,12 +104,14 @@ export function computeFare(rule: PricingRuleDocument, input: FareInput): FareBr
 
 /** Platform commission on a completed trip, from the most specific active rule. */
 export async function computeCommission(categoryKey: string, fareTotal: number): Promise<number> {
-  const rules = await CommissionRule.find({
-    appliesTo: 'driver',
-    status: 'active',
-    effectiveFrom: { $lte: new Date() },
-    $or: [{ categoryKey }, { categoryKey: null }, { categoryKey: { $exists: false } }],
-  }).sort({ effectiveFrom: -1 })
+  const rules = await commissionCache.get(categoryKey, () =>
+    CommissionRule.find({
+      appliesTo: 'driver',
+      status: 'active',
+      effectiveFrom: { $lte: new Date() },
+      $or: [{ categoryKey }, { categoryKey: null }, { categoryKey: { $exists: false } }],
+    }).sort({ effectiveFrom: -1 }),
+  )
   const rule = rules.find((r) => r.categoryKey === categoryKey) ?? rules[0]
   if (!rule) return 0
   const commission = rule.type === 'percentage' ? (fareTotal * rule.value) / 100 : rule.value

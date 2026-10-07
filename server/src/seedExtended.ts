@@ -80,6 +80,7 @@ export async function seedExtended() {
     { name: 'Mumbai Metro', country: 'India', state: 'Maharashtra', city: 'Mumbai', zone: 'South Mumbai', geofence: { centerLat: 19.076, centerLng: 72.8777, radiusKm: 25 } },
     { name: 'Bengaluru Metro', country: 'India', state: 'Karnataka', city: 'Bengaluru', zone: 'Central', geofence: { centerLat: 12.9716, centerLng: 77.5946, radiusKm: 30 } },
     { name: 'Delhi NCR', country: 'India', state: 'Delhi', city: 'New Delhi', zone: 'NCR', geofence: { centerLat: 28.7041, centerLng: 77.1025, radiusKm: 40 } },
+    { name: 'Indore Metro', country: 'India', state: 'Madhya Pradesh', city: 'Indore', zone: 'Central', geofence: { centerLat: 22.7196, centerLng: 75.8577, radiusKm: 30 } },
     { name: 'Pune Metro', country: 'India', state: 'Maharashtra', city: 'Pune', zone: 'Central', geofence: { centerLat: 18.5204, centerLng: 73.8567, radiusKm: 20 } },
   ]
   const serviceAreas: any[] = []

@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { Payment } from '../models/Payment'
 import { Booking } from '../models/Booking'
+import { searchRegex } from '../utils/regex'
 
 function parsePagination(query: Record<string, string>) {
   const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1)
@@ -16,7 +17,7 @@ export async function listPayments(req: Request, res: Response) {
   if (method) filter.method = method
 
   if (q && q.trim()) {
-    const matchingBookings = await Booking.find({ bookingCode: { $regex: q.trim(), $options: 'i' } }).select('_id')
+    const matchingBookings = await Booking.find({ bookingCode: { $regex: searchRegex(q), $options: 'i' } }).select('_id')
     filter.booking = { $in: matchingBookings.map((b) => b._id) }
   }
 

@@ -3,6 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import multer from 'multer'
 import { env } from '../config/env'
+import type { RequestHandler } from 'express'
+import { matchesDeclaredType } from './fileSignature'
 import { HttpError } from './http'
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -28,6 +30,21 @@ function storage(folder: UploadFolder) {
   })
 }
 
+/** Runs the multer middleware, then rejects (and deletes) any file whose first bytes do not match its declared type. */
+function withSignatureCheck(upload: RequestHandler): RequestHandler {
+  return (req, res, next) => {
+    upload(req, res, (err?: unknown) => {
+      if (err) return next(err)
+      const files = Array.isArray(req.files) ? req.files : Object.values((req.files ?? {}) as Record<string, Express.Multer.File[]>).flat()
+      if (req.file) files.push(req.file)
+      const bad = files.filter((f) => !matchesDeclaredType(f))
+      if (!bad.length) return next()
+      for (const f of files) fs.rmSync(f.path, { force: true })
+      next(new HttpError(400, `${bad[0].fieldname} is not a valid JPEG, PNG, WebP or PDF file`))
+    })
+  }
+}
+
 function imageFilter(imagesOnly: boolean): multer.Options['fileFilter'] {
   return (_req, file, cb) => {
     const allowed = ALLOWED_TYPES[file.mimetype] && !(imagesOnly && file.mimetype === 'application/pdf')
@@ -37,17 +54,19 @@ function imageFilter(imagesOnly: boolean): multer.Options['fileFilter'] {
 }
 
 /** Multipart middleware accepting one optional file in `field` (JPEG, PNG, WebP or PDF up to 5 MB). */
-export function singleUpload(folder: UploadFolder, field: string, { imagesOnly = false } = {}) {
-  return multer({ storage: storage(folder), limits: { fileSize: MAX_FILE_BYTES, files: 1 }, fileFilter: imageFilter(imagesOnly) }).single(field)
+export function singleUpload(folder: UploadFolder, field: string, { imagesOnly = false } = {}): RequestHandler {
+  return withSignatureCheck(multer({ storage: storage(folder), limits: { fileSize: MAX_FILE_BYTES, files: 1 }, fileFilter: imageFilter(imagesOnly) }).single(field))
 }
 
 /** Multipart middleware accepting one optional file in each of `fields` (same type and size rules). */
-export function multiUpload(folder: UploadFolder, fields: string[], { imagesOnly = false } = {}) {
-  return multer({
+export function multiUpload(folder: UploadFolder, fields: string[], { imagesOnly = false } = {}): RequestHandler {
+  return withSignatureCheck(
+    multer({
     storage: storage(folder),
     limits: { fileSize: MAX_FILE_BYTES, files: fields.length },
     fileFilter: imageFilter(imagesOnly),
-  }).fields(fields.map((name) => ({ name, maxCount: 1 })))
+    }).fields(fields.map((name) => ({ name, maxCount: 1 }))),
+  )
 }
 
 /** Public URL path of an uploaded file. */

@@ -6,6 +6,7 @@ import { recordAudit } from '../utils/audit'
 import { notifyUser } from '../utils/notify'
 import { emitBookingEvent, joinBookingRoom, leaveBookingRoom } from '../realtime/socket'
 import { startDispatch, stopDispatch } from '../services/dispatch'
+import { searchRegex } from '../utils/regex'
 
 const CUSTOMER_FIELDS = 'name phone email'
 const DRIVER_FIELDS = 'name phone rating onlineStatus currentLocation'
@@ -28,7 +29,7 @@ export async function listBookings(req: Request, res: Response) {
     filter.status = statuses.length > 1 ? { $in: statuses } : (statuses[0] as BookingDocument['status'])
   }
   if (paymentStatus) filter.paymentStatus = paymentStatus as BookingDocument['paymentStatus']
-  if (q) filter.bookingCode = { $regex: q.trim(), $options: 'i' }
+  if (q) filter.bookingCode = { $regex: searchRegex(q), $options: 'i' }
 
   const [items, total] = await Promise.all([
     Booking.find(filter)

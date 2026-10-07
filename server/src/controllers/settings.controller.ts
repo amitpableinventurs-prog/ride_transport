@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { Settings } from '../models/Settings'
 import { recordAudit } from '../utils/audit'
+import { invalidateSettingsCache } from '../utils/settings'
 
 async function getOrCreateSettings() {
   const existing = await Settings.findOne({ singleton: 'platform' })
@@ -49,6 +50,7 @@ export async function updateSettings(req: Request, res: Response) {
     }
   }
   await settings.save()
+  invalidateSettingsCache()
 
   await recordAudit(req.admin!, 'settings.updated', 'PlatformSettings', 'Platform Settings')
 

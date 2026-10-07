@@ -16,6 +16,7 @@ export const BOOKING_STATUSES = [
   'completed',
   'cancelled',
 ] as const
+
 export type BookingStatus = (typeof BOOKING_STATUSES)[number]
 
 /** A rider is attached and the trip has not finished. */
@@ -129,6 +130,9 @@ const bookingSchema = new Schema(
 bookingSchema.index({ customer: 1, createdAt: -1 })
 bookingSchema.index({ driver: 1, createdAt: -1 })
 bookingSchema.index({ status: 1, scheduledAt: 1 })
+bookingSchema.index({ status: 1, 'offer.driver': 1, 'offer.expiresAt': 1 })
+bookingSchema.index({ customer: 1, status: 1 })
+bookingSchema.index({ driver: 1, status: 1 })
 
 export type BookingDocument = InferSchemaType<typeof bookingSchema>
 export const Booking = model('Booking', bookingSchema)

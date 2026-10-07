@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import type { FilterQuery } from 'mongoose'
 import { Coupon, type CouponDocument } from '../models/Coupon'
 import { recordAudit } from '../utils/audit'
+import { searchRegex } from '../utils/regex'
 
 const MUTABLE_FIELDS = [
   'code',
@@ -38,7 +39,7 @@ export async function listCoupons(req: Request, res: Response) {
   if (autoApply === 'false') filter.autoApply = false
   if (status) filter.status = status as CouponDocument['status']
   if (q) {
-    filter.$or = [{ title: { $regex: q.trim(), $options: 'i' } }, { code: { $regex: q.trim(), $options: 'i' } }]
+    filter.$or = [{ title: { $regex: searchRegex(q), $options: 'i' } }, { code: { $regex: searchRegex(q), $options: 'i' } }]
   }
   const coupons = await Coupon.find(filter).sort({ createdAt: -1 })
   res.json(coupons)

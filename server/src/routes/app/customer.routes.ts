@@ -7,11 +7,13 @@ import * as profile from '../../controllers/app/profile.controller'
 import * as support from '../../controllers/app/support.controller'
 import { rejectDuringMaintenance, requireAppAuth, requireAppUserType } from '../../middleware/appAuth'
 import { singleUpload } from '../../utils/uploads'
+import { perUserLimiter } from '../../middleware/overload'
+import { env } from '../../config/env'
 
 // SRS §10.2 customer app, mounted at /api/v1/customer.
 const router = Router()
 
-router.use(rejectDuringMaintenance, requireAppAuth, requireAppUserType('customer'))
+router.use(rejectDuringMaintenance, requireAppAuth, requireAppUserType('customer'), perUserLimiter(env.appUserRateLimit))
 
 router.get('/profile', profile.getProfile)
 router.patch('/profile', singleUpload('profile', 'photo', { imagesOnly: true }), profile.updateProfile)

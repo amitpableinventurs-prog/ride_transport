@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import { Types, type FilterQuery } from 'mongoose'
 import { Ticket, type TicketDocument } from '../models/Ticket'
 import { recordAudit } from '../utils/audit'
+import { searchRegex } from '../utils/regex'
 
 const ASSIGNEE_FIELDS = 'name email'
 
@@ -12,7 +13,7 @@ export async function listTickets(req: Request, res: Response) {
   if (status) filter.status = status as TicketDocument['status']
   if (priority) filter.priority = priority as TicketDocument['priority']
   if (q) {
-    filter.$or = [{ subject: { $regex: q.trim(), $options: 'i' } }, { raisedByName: { $regex: q.trim(), $options: 'i' } }]
+    filter.$or = [{ subject: { $regex: searchRegex(q), $options: 'i' } }, { raisedByName: { $regex: searchRegex(q), $options: 'i' } }]
   }
 
   const tickets = await Ticket.find(filter).populate('assignedTo', ASSIGNEE_FIELDS).sort({ createdAt: -1 })

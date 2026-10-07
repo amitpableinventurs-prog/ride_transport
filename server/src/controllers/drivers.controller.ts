@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { Driver } from '../models/Driver'
 import { recordAudit } from '../utils/audit'
+import { searchRegex } from '../utils/regex'
 
 function parsePagination(req: Request) {
   const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1)
@@ -8,9 +9,6 @@ function parsePagination(req: Request) {
   return { page, limit, skip: (page - 1) * limit }
 }
 
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
 
 // Backs both the "Riders" and "Drivers" nav pages (SRS section 9) — a single
 // Driver collection distinguished by serviceType, filtered via ?serviceType=.
@@ -26,7 +24,7 @@ export async function listDrivers(req: Request, res: Response) {
   if (status) filter.status = status
   if (approvalStatus) filter.approvalStatus = approvalStatus
   if (q) {
-    const re = new RegExp(escapeRegex(q), 'i')
+    const re = new RegExp(searchRegex(q), 'i')
     filter.$or = [{ name: re }, { email: re }, { phone: re }]
   }
 

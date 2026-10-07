@@ -1,5 +1,10 @@
-import { ServiceArea } from '../models/ServiceArea'
+import type { HydratedDocument } from 'mongoose'
+import { ServiceArea, type ServiceAreaDocument } from '../models/ServiceArea'
+import { TtlCache } from './cache'
 import { HttpError } from './http'
+
+// Service areas change rarely and are read on almost every app request.
+const areasCache = new TtlCache<HydratedDocument<ServiceAreaDocument>[]>(15_000, 1)
 
 export interface LatLng {
   lat: number
@@ -65,7 +70,7 @@ export function parsePlace(value: unknown, field: string): Place {
  * geofenced as circles; when several overlap the closest center wins.
  */
 export async function findServiceArea(point: LatLng) {
-  const areas = await ServiceArea.find({ status: 'active' })
+  const areas = await areasCache.get('active', () => ServiceArea.find({ status: 'active' }))
   let best: (typeof areas)[number] | null = null
   let bestDistance = Infinity
   for (const area of areas) {
@@ -78,4 +83,11 @@ export async function findServiceArea(point: LatLng) {
     }
   }
   return best
+}
+
+/** Latitude / longitude limits of the square around a point, for an index-friendly pre-filter before the exact distance check. */
+export function boundingBox(point: LatLng, radiusKm: number) {
+  const dLat = radiusKm / 111
+  const dLng = radiusKm / (111 * Math.max(0.1, Math.cos((point.lat * Math.PI) / 180)))
+  return { minLat: point.lat - dLat, maxLat: point.lat + dLat, minLng: point.lng - dLng, maxLng: point.lng + dLng }
 }

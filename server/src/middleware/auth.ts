@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import { Admin } from '../models/Admin'
 import { Role } from '../models/Role'
 import { verifyAccessToken } from '../utils/jwt'
+import { isSessionRevoked } from '../utils/sessions'
 import type { PermissionKey } from '../types/rbac'
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -9,7 +10,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   const token = header.startsWith('Bearer ') ? header.slice(7) : null
   const payload = token ? verifyAccessToken(token) : null
 
-  if (!payload) {
+  if (!payload || (await isSessionRevoked(payload.fid))) {
     res.status(401).json({ message: 'Unauthorized' })
     return
   }
@@ -22,6 +23,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   const role = await Role.findOne({ key: admin.role })
   req.admin = admin
+  req.adminSessionId = payload.fid
   req.adminPermissions = role?.permissions ?? []
   next()
 }

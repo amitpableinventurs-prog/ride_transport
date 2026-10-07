@@ -31,6 +31,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     res.status(409).json({ message: fields ? `A record with this ${fields} already exists` : 'Duplicate record' })
     return
   }
+  if ((err as { type?: string }).type === 'entity.too.large') {
+    res.status(413).json({ message: 'Request body is too large' })
+    return
+  }
   if (err instanceof SyntaxError && 'body' in err) {
     res.status(400).json({ message: 'Malformed JSON body' })
     return

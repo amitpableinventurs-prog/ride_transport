@@ -9,10 +9,11 @@ import { Driver } from '../../models/Driver'
 import { ServiceCategory } from '../../models/ServiceCategory'
 import { Vehicle } from '../../models/Vehicle'
 import { applyCoupon } from '../../utils/coupons'
-import { etaMinutes, findServiceArea, haversineKm, parseLatLng, parsePlace, type LatLng } from '../../utils/geo'
+import { boundingBox, etaMinutes, findServiceArea, haversineKm, parseLatLng, parsePlace, type LatLng } from '../../utils/geo'
 import { HttpError, optionalString, parseAmount, requireString } from '../../utils/http'
 import { normalizeIndianMobile } from '../../utils/phone'
 import { getPlatformSettings } from '../../utils/settings'
+import { TtlCache } from '../../utils/cache'
 
 const MAX_SAVED_PLACES = 10
 const MAX_EMERGENCY_CONTACTS = 3
@@ -95,7 +96,18 @@ export async function putEmergencyContacts(req: Request, res: Response) {
 
 /** Online riders within the dispatch radius and the nearest ETA, per category key. */
 export async function nearbyAvailability(point: LatLng, radiusKm: number, categoryKeys: string[]) {
+  // Shared for 10 seconds per ~100 m cell, so many phones opening the Home / Service tab cost one query.
+  const key = `${point.lat.toFixed(3)},${point.lng.toFixed(3)}:${radiusKm}:${categoryKeys.join(',')}`
+  return availabilityCache.get(key, () => computeAvailability(point, radiusKm, categoryKeys))
+}
+
+const availabilityCache = new TtlCache<Awaited<ReturnType<typeof computeAvailability>>>(10_000, 2000)
+
+async function computeAvailability(point: LatLng, radiusKm: number, categoryKeys: string[]) {
+  const box = boundingBox(point, radiusKm)
   const riders = await Driver.find({
+    'currentLocation.lat': { $gte: box.minLat, $lte: box.maxLat },
+    'currentLocation.lng': { $gte: box.minLng, $lte: box.maxLng },
     status: 'active',
     approvalStatus: 'verified',
     onlineStatus: 'online',

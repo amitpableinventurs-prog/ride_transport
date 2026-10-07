@@ -3,17 +3,18 @@ import { Customer } from '../../models/Customer'
 import { Driver } from '../../models/Driver'
 import { TransportPartner } from '../../models/TransportPartner'
 import { Device } from '../../models/Device'
-import { RevokedToken } from '../../models/RevokedToken'
 import {
   APP_USER_TYPES,
   signAppAccessToken,
   signAppRefreshToken,
+  newSessionId,
   signAppRegistrationToken,
   verifyAppRefreshToken,
   verifyAppRegistrationToken,
   type AppUserType,
 } from '../../utils/jwt'
 import { issueOtp, OtpError, verifyOtp } from '../../utils/otp'
+import { claimRefreshToken, isSessionRevoked, revokeSession } from '../../utils/sessions'
 import { maskPhone, normalizeIndianMobile } from '../../utils/phone'
 import { DRIVER_MIN_AGE, parseProfileInput } from '../../utils/profileInput'
 import { findAppUserById, findAppUserByPhone, isAppUserActive, serializeAppUser, type AppUser } from '../../utils/appUsers'
@@ -26,9 +27,10 @@ function otpKey(userType: AppUserType, phone: string) {
 }
 
 function issueTokens(user: AppUser) {
+  const fid = newSessionId()
   return {
-    accessToken: signAppAccessToken(user.doc.id, user.type),
-    refreshToken: signAppRefreshToken(user.doc.id, user.type),
+    accessToken: signAppAccessToken(user.doc.id, user.type, fid),
+    refreshToken: signAppRefreshToken(user.doc.id, user.type, fid),
     user: serializeAppUser(user),
   }
 }
@@ -212,16 +214,17 @@ export async function register(req: Request, res: Response) {
   res.status(201).json(issueTokens(user))
 }
 
-async function revokeRefreshToken(jti: string | undefined, exp: number | undefined) {
-  if (!jti || !exp) return
-  await RevokedToken.updateOne({ jti }, { $setOnInsert: { jti, expiresAt: new Date(exp * 1000) } }, { upsert: true })
-}
-
 // POST /refresh: refresh tokens are single-use; each call returns a new pair.
 export async function refresh(req: Request, res: Response) {
   const payload = verifyAppRefreshToken((req.body as { refreshToken?: unknown }).refreshToken)
-  if (!payload || (payload.jti && (await RevokedToken.exists({ jti: payload.jti })))) {
+  if (!payload || (await isSessionRevoked(payload.fid))) {
     res.status(401).json({ message: 'Refresh token expired or invalid' })
+    return
+  }
+  // Single use: a token that was already exchanged is being replayed, so end the whole session.
+  if (!(await claimRefreshToken(payload.jti, payload.exp))) {
+    await revokeSession(payload.fid)
+    res.status(401).json({ message: 'Your session is no longer valid. Please log in again.' })
     return
   }
 
@@ -231,10 +234,9 @@ export async function refresh(req: Request, res: Response) {
     return
   }
 
-  await revokeRefreshToken(payload.jti, payload.exp)
   res.json({
-    accessToken: signAppAccessToken(user.doc.id, user.type),
-    refreshToken: signAppRefreshToken(user.doc.id, user.type),
+    accessToken: signAppAccessToken(user.doc.id, user.type, payload.fid),
+    refreshToken: signAppRefreshToken(user.doc.id, user.type, payload.fid),
   })
 }
 
@@ -244,13 +246,14 @@ export async function me(req: Request, res: Response) {
 }
 
 // POST /logout: revokes the refresh token and unregisters the device's push token.
-// The short-lived access token stays valid until it expires; the app discards it.
 export async function logout(req: Request, res: Response) {
   const user = req.appUser!
   const { refreshToken, fcmToken } = (req.body ?? {}) as { refreshToken?: unknown; fcmToken?: unknown }
 
+  // Ends the whole login session, so the access token stops working immediately too.
   const payload = verifyAppRefreshToken(refreshToken)
-  if (payload && payload.sub === user.doc.id && payload.ut === user.type) await revokeRefreshToken(payload.jti, payload.exp)
+  if (payload && payload.sub === user.doc.id && payload.ut === user.type) await revokeSession(payload.fid)
+  else await revokeSession(req.appSessionId)
   if (typeof fcmToken === 'string' && fcmToken) await Device.deleteOne({ token: fcmToken, userType: user.type, userId: user.doc._id })
 
   res.status(204).send()

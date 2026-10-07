@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { Customer } from '../models/Customer'
 import { recordAudit } from '../utils/audit'
+import { searchRegex } from '../utils/regex'
 
 function parsePagination(req: Request) {
   const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1)
@@ -8,9 +9,6 @@ function parsePagination(req: Request) {
   return { page, limit, skip: (page - 1) * limit }
 }
 
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
 
 export async function listCustomers(req: Request, res: Response) {
   const { page, limit, skip } = parsePagination(req)
@@ -20,7 +18,7 @@ export async function listCustomers(req: Request, res: Response) {
   const filter: Record<string, unknown> = {}
   if (status) filter.status = status
   if (q) {
-    const re = new RegExp(escapeRegex(q), 'i')
+    const re = new RegExp(searchRegex(q), 'i')
     filter.$or = [{ name: re }, { email: re }, { phone: re }]
   }
 

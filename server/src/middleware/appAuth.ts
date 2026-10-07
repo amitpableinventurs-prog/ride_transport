@@ -1,13 +1,14 @@
 import type { NextFunction, Request, Response } from 'express'
-import { Settings } from '../models/Settings'
+import { getPlatformSettings } from '../utils/settings'
 import { verifyAppAccessToken, type AppUserType } from '../utils/jwt'
+import { isSessionRevoked } from '../utils/sessions'
 import { findAppUserById, isAppUserActive } from '../utils/appUsers'
 
 export async function requireAppAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization ?? ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : null
   const payload = token ? verifyAppAccessToken(token) : null
-  if (!payload) {
+  if (!payload || (await isSessionRevoked(payload.fid))) {
     res.status(401).json({ message: 'Unauthorized' })
     return
   }
@@ -19,6 +20,7 @@ export async function requireAppAuth(req: Request, res: Response, next: NextFunc
   }
 
   req.appUser = user
+  req.appSessionId = payload.fid
   next()
 }
 
@@ -35,8 +37,8 @@ export function requireAppUserType(type: AppUserType) {
 
 // Settings → Maintenance mode takes the mobile apps offline without affecting the admin panel.
 export async function rejectDuringMaintenance(_req: Request, res: Response, next: NextFunction) {
-  const settings = await Settings.findOne({ singleton: 'platform' }).select('maintenanceMode')
-  if (settings?.maintenanceMode) {
+  const settings = await getPlatformSettings()
+  if (settings.maintenanceMode) {
     res.status(503).json({ message: 'The platform is under maintenance. Please try again later.' })
     return
   }

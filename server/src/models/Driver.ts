@@ -44,5 +44,7 @@ const driverSchema = new Schema(
   { timestamps: true, toJSON: idToJson },
 )
 
+driverSchema.index({ onlineStatus: 1, status: 1, approvalStatus: 1, 'currentLocation.lat': 1, 'currentLocation.lng': 1 })
+
 export type DriverDocument = InferSchemaType<typeof driverSchema>
 export const Driver = model('Driver', driverSchema)

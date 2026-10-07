@@ -8,7 +8,14 @@ mongoose.set('toJSON', idToJson)
 
 export async function connectDb(): Promise<void> {
   mongoose.set('strictQuery', true)
-  await mongoose.connect(env.mongoUri)
+  await mongoose.connect(env.mongoUri, {
+    maxPoolSize: env.dbPoolSize,
+    minPoolSize: Math.min(5, env.dbPoolSize),
+    // Fail fast instead of hanging every request when the database is unreachable.
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    maxIdleTimeMS: 60000,
+  })
   console.log(`[db] connected to ${env.mongoUri}`)
 
   // App users sign up with a phone number only, so email moved from a plain

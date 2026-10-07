@@ -20,5 +20,7 @@ const walletTransactionSchema = new Schema(
   { timestamps: true },
 )
 
+walletTransactionSchema.index({ wallet: 1, createdAt: -1 })
+
 export type WalletTransactionDocument = InferSchemaType<typeof walletTransactionSchema>
 export const WalletTransaction = model('WalletTransaction', walletTransactionSchema)

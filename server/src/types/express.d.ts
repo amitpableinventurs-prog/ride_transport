@@ -7,7 +7,9 @@ declare global {
     interface Request {
       admin?: HydratedDocument<AdminDocument>
       adminPermissions?: string[]
+      adminSessionId?: string
       appUser?: AppUser
+      appSessionId?: string
     }
   }
 }

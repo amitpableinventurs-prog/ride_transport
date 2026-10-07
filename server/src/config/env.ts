@@ -46,6 +46,20 @@ export const env = {
   // Never enabled in production.
   otpDevEcho: !isProduction && (process.env.OTP_DEV_ECHO ?? 'true') === 'true',
   smsProvider: process.env.SMS_PROVIDER ?? 'console',
+  // Requests per IP per 15 minutes across the whole API (login and OTP routes have stricter limits of their own).
+  rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 5000),
+  // Signed-in app users are limited per account (requests per minute), not per IP: phones share carrier IPs.
+  appUserRateLimit: Number(process.env.APP_USER_RATE_LIMIT ?? 240),
+  // Load protection: answer 503 instead of queueing when the server is falling behind.
+  maxEventLoopLagMs: Number(process.env.MAX_EVENT_LOOP_LAG_MS ?? 250),
+  maxConcurrentRequests: Number(process.env.MAX_CONCURRENT_REQUESTS ?? 250),
+  requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? 30000),
+  // Set LOG_REQUESTS=false to switch off the per-request access log (busy servers can log to a file or proxy instead).
+  logRequests: (process.env.LOG_REQUESTS ?? 'true') !== 'false',
+  // MongoDB connection pool size.
+  dbPoolSize: Number(process.env.DB_POOL_SIZE ?? 50),
+  // Number of reverse proxies in front of the server (0 = none). Needed so rate limits see the real client IP.
+  trustProxy: Number(process.env.TRUST_PROXY ?? 0),
   // Twilio (SMS_PROVIDER=twilio): the Account SID plus either the Auth Token, or an API Key SID + Secret,
   // and a sender: a Twilio phone number (TWILIO_FROM) or a Messaging Service SID.
   twilioAccountSid: process.env.TWILIO_ACCOUNT_SID ?? '',
@@ -65,4 +79,16 @@ export const env = {
   telephonyProvider: process.env.TELEPHONY_PROVIDER ?? 'direct',
 
   isProduction,
+}
+
+// Refuse to start in production with development defaults: guessable secrets would let anyone sign tokens.
+if (isProduction) {
+  const weak = (name: string, value: string) => !process.env[name] || value.length < 32 || /change-me|dev-/i.test(value)
+  const problems = [
+    weak('JWT_ACCESS_SECRET', jwtAccessSecret) && 'JWT_ACCESS_SECRET',
+    weak('JWT_REFRESH_SECRET', jwtRefreshSecret) && 'JWT_REFRESH_SECRET',
+    jwtAccessSecret === jwtRefreshSecret && 'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must differ',
+    (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*') && 'CORS_ORIGIN (set the admin panel origin)',
+  ].filter(Boolean)
+  if (problems.length) throw new Error(`Unsafe production configuration, fix: ${problems.join(', ')}`)
 }

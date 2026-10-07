@@ -18,5 +18,7 @@ const documentSchema = new Schema(
   { timestamps: true },
 )
 
+documentSchema.index({ ownerType: 1, ownerId: 1, docType: 1 })
+
 export type DocumentRecordDocument = InferSchemaType<typeof documentSchema>
 export const DocumentRecord = model('DocumentRecord', documentSchema, 'documents')

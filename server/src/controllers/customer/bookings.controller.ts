@@ -135,9 +135,10 @@ export async function fareEstimate(req: Request, res: Response) {
   if (body.categoryKey) filter.key = body.categoryKey
   const categories = await ServiceCategory.find(filter).sort({ mode: 1, sortOrder: 1 })
 
+  // Categories are priced in parallel: each one only reads (cached) rules.
+  const results = await Promise.all(categories.map(async (category) => ({ category, priced: await priceCategory(category, trip, area._id, at) })))
   const estimates = []
-  for (const category of categories) {
-    const priced = await priceCategory(category, trip, area._id, at)
+  for (const { category, priced } of results) {
     if (!priced) continue
     let coupon: { code: string; discount: number } | { error: string } | undefined
     if (couponCode) {

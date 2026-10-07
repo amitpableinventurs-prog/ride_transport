@@ -9,6 +9,8 @@ import { rejectDuringMaintenance, requireAppAuth, requireAppUserType } from '../
 import { otpSendLimiter, otpVerifyLimiter } from '../../middleware/rateLimits'
 import { multiUpload, singleUpload } from '../../utils/uploads'
 import type { RequestHandler } from 'express'
+import { perUserLimiter } from '../../middleware/overload'
+import { env } from '../../config/env'
 
 // SRS §10.3 rider app, mounted at /api/v1/rider. Riders are Driver accounts.
 const router = Router()
@@ -26,7 +28,7 @@ router.post('/auth/otp/resend', otpSendLimiter, asRider, auth.sendOtp)
 router.post('/auth/otp/verify', otpVerifyLimiter, asRider, auth.verifyOtpAndSignIn)
 router.post('/auth/refresh', auth.refresh)
 
-router.use(requireAppAuth, requireAppUserType('driver'))
+router.use(requireAppAuth, requireAppUserType('driver'), perUserLimiter(env.appUserRateLimit))
 router.post('/auth/logout', auth.logout)
 router.get('/auth/me', profile.getProfile)
 

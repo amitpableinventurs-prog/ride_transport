@@ -10,6 +10,7 @@ import { haversineKm, type LatLng } from '../utils/geo'
 import { notifyUser } from '../utils/notify'
 import { getPlatformSettings } from '../utils/settings'
 import { emitBookingEvent, emitToRider } from '../realtime/socket'
+import { boundingBox } from '../utils/geo'
 
 type BookingDoc = HydratedDocument<BookingDocument>
 
@@ -49,8 +50,11 @@ export async function findNearbyRiders(point: LatLng, categoryKey: string, opts:
   ])
   const exclude = [...(opts.exclude ?? []), ...busyWithOffer]
 
+  const box = boundingBox(point, opts.radiusKm)
   const riders = await Driver.find({
     _id: { $nin: exclude },
+    'currentLocation.lat': { $gte: box.minLat, $lte: box.maxLat },
+    'currentLocation.lng': { $gte: box.minLng, $lte: box.maxLng },
     status: 'active',
     approvalStatus: 'verified',
     onlineStatus: 'online',

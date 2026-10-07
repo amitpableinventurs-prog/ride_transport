@@ -7,14 +7,15 @@ import {
   signAccessToken,
   signOtpChallengeToken,
   signRefreshToken,
+  newSessionId,
   verifyOtpChallengeToken,
   verifyRefreshToken,
 } from '../utils/jwt'
+import { claimRefreshToken, isSessionRevoked, revokeSession } from '../utils/sessions'
 import { recordAudit } from '../utils/audit'
 import { roleDisplayName } from '../utils/roles'
 import { issueOtp, OtpError, verifyOtp } from '../utils/otp'
 import { maskPhone } from '../utils/phone'
-import { env } from '../config/env'
 import type { HydratedDocument } from 'mongoose'
 import type { AdminDocument } from '../models/Admin'
 
@@ -31,8 +32,9 @@ async function toAuthUser(admin: HydratedDocument<AdminDocument>) {
 }
 
 async function completeLogin(admin: HydratedDocument<AdminDocument>, res: Response) {
-  const accessToken = signAccessToken(admin.id)
-  const refreshToken = signRefreshToken(admin.id)
+  const fid = newSessionId()
+  const accessToken = signAccessToken(admin.id, fid)
+  const refreshToken = signRefreshToken(admin.id, fid)
 
   admin.lastLoginAt = new Date()
   await admin.save()
@@ -128,9 +130,15 @@ export async function resendLoginOtp(req: Request, res: Response) {
 
 export async function refresh(req: Request, res: Response) {
   const { refreshToken } = req.body as { refreshToken?: string }
-  const payload = refreshToken ? verifyRefreshToken(refreshToken) : null
-  if (!payload) {
+  const payload = verifyRefreshToken(refreshToken)
+  if (!payload || (await isSessionRevoked(payload.fid))) {
     res.status(401).json({ message: 'Refresh token expired or invalid' })
+    return
+  }
+  // Single use: a token that was already exchanged is being replayed, so end the whole session.
+  if (!(await claimRefreshToken(payload.jti, payload.exp))) {
+    await revokeSession(payload.fid)
+    res.status(401).json({ message: 'Your session is no longer valid. Please sign in again.' })
     return
   }
 
@@ -141,12 +149,14 @@ export async function refresh(req: Request, res: Response) {
   }
 
   res.json({
-    accessToken: signAccessToken(admin.id),
-    refreshToken: signRefreshToken(admin.id, env.refreshTokenTtlDays),
+    accessToken: signAccessToken(admin.id, payload.fid),
+    refreshToken: signRefreshToken(admin.id, payload.fid),
   })
 }
 
 export async function logout(req: Request, res: Response) {
+  // Ends the whole login session, so the access token stops working immediately too.
+  await revokeSession(req.adminSessionId)
   if (req.admin) {
     await recordAudit(req.admin, 'auth.logout', 'Session', req.admin.email)
   }

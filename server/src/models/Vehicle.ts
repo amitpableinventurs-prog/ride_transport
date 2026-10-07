@@ -18,5 +18,8 @@ const vehicleSchema = new Schema(
   { timestamps: true },
 )
 
+vehicleSchema.index({ ownerType: 1, ownerId: 1, status: 1 })
+vehicleSchema.index({ categoryKey: 1, status: 1, ownerType: 1 })
+
 export type VehicleDocument = InferSchemaType<typeof vehicleSchema>
 export const Vehicle = model('Vehicle', vehicleSchema)

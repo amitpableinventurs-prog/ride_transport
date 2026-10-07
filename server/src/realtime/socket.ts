@@ -11,6 +11,7 @@ import { ServiceArea } from '../models/ServiceArea'
 import { findAppUserById, isAppUserActive, type AppUser } from '../utils/appUsers'
 import { etaMinutes, haversineKm, parseLatLng, type LatLng } from '../utils/geo'
 import { verifyAccessToken, verifyAppAccessToken, type AppUserType } from '../utils/jwt'
+import { isSessionRevoked } from '../utils/sessions'
 
 type Target = 'customer' | 'rider' | 'admin'
 type Id = { toString(): string }
@@ -77,7 +78,7 @@ function appAuth(userType: AppUserType) {
   return async (socket: Socket, next: (err?: Error) => void) => {
     const token = handshakeToken(socket)
     const payload = token ? verifyAppAccessToken(token) : null
-    if (!payload || payload.ut !== userType) return next(new Error('Unauthorized'))
+    if (!payload || payload.ut !== userType || (await isSessionRevoked(payload.fid))) return next(new Error('Unauthorized'))
     const user = await findAppUserById(payload.ut, payload.sub)
     if (!user || !isAppUserActive(user)) return next(new Error('Unauthorized'))
     socket.data.user = user
@@ -88,6 +89,7 @@ function appAuth(userType: AppUserType) {
 async function adminAuth(socket: Socket, next: (err?: Error) => void) {
   const token = handshakeToken(socket)
   const payload = token ? verifyAccessToken(token) : null
+  if (payload && (await isSessionRevoked(payload.fid))) return next(new Error('Unauthorized'))
   const admin = payload ? await Admin.findById(payload.sub).select('status') : null
   if (!admin || admin.status === 'suspended') return next(new Error('Unauthorized'))
   next()
@@ -167,6 +169,8 @@ async function joinActiveBookings(socket: Socket, field: 'customer' | 'driver', 
 
 type Ack = ((response: unknown) => void) | undefined
 
+const CHAT_MIN_INTERVAL_MS = 500
+
 /** Socket handlers are async; log failures instead of leaving unhandled rejections. */
 function safe<A extends unknown[]>(handler: (...args: A) => Promise<unknown>) {
   return (...args: A) => {
@@ -175,7 +179,10 @@ function safe<A extends unknown[]>(handler: (...args: A) => Promise<unknown>) {
 }
 
 function registerChat(socket: Socket, from: 'customer' | 'driver') {
+  let lastChatAt = 0
   socket.on('chat:message', safe(async (payload: { bookingId?: unknown; text?: unknown }, ack: Ack) => {
+    if (Date.now() - lastChatAt < CHAT_MIN_INTERVAL_MS) return ack?.({ ok: false, message: 'You are sending messages too fast' })
+    lastChatAt = Date.now()
     const user = socket.data.user as AppUser
     const text = typeof payload?.text === 'string' ? payload.text.trim().slice(0, CHAT_MAX_LENGTH) : ''
     const bookingId = typeof payload?.bookingId === 'string' ? payload.bookingId : ''
@@ -211,6 +218,13 @@ function onCustomerConnection(socket: Socket) {
   registerBookingJoin(socket, 'customer')
 }
 
+const LOCATION_MIN_INTERVAL_MS = 1000
+const RIDER_STATE_CACHE_MS = 5000
+
+function findActiveTrip(driverId: string) {
+  return Booking.findOne({ driver: driverId, status: { $in: ACTIVE_TRIP_STATUSES } }).select('status pickup drop stops')
+}
+
 function onRiderConnection(socket: Socket) {
   const user = socket.data.user as AppUser
   const driverId = user.doc.id as string
@@ -220,14 +234,26 @@ function onRiderConnection(socket: Socket) {
   registerBookingJoin(socket, 'driver')
 
   let lastDbWrite = 0
+  let lastEventAt = 0
+  // Rider status and active trip are cached per connection, so a location update (every few seconds per rider)
+  // does not need two database reads each time.
+  let driverCache: { at: number; name: string; onlineStatus: string } | null = null
+  let bookingCache: { at: number; value: Awaited<ReturnType<typeof findActiveTrip>> } | null = null
   socket.on('rider:location', safe(async (payload: { lat?: unknown; lng?: unknown; heading?: unknown; speed?: unknown; timestamp?: unknown }) => {
+    const nowMs = Date.now()
+    if (nowMs - lastEventAt < LOCATION_MIN_INTERVAL_MS) return // faster than once a second adds nothing
+    lastEventAt = nowMs
     const point = parseLatLng(payload?.lat, payload?.lng)
     if (!point) return
     const heading = typeof payload?.heading === 'number' ? payload.heading : undefined
     const speed = typeof payload?.speed === 'number' ? payload.speed : undefined
     const now = Date.now()
 
-    const driver = await Driver.findById(driverId).select('name onlineStatus')
+    if (!driverCache || now - driverCache.at > RIDER_STATE_CACHE_MS) {
+      const found = await Driver.findById(driverId).select('name onlineStatus')
+      driverCache = found ? { at: now, name: found.name, onlineStatus: found.onlineStatus } : null
+    }
+    const driver = driverCache
     if (!driver || driver.onlineStatus === 'offline') return
 
     liveRiders.set(driverId, { id: driverId, name: driver.name, ...point, heading, speed, onlineStatus: driver.onlineStatus, updatedAt: now })
@@ -237,7 +263,8 @@ function onRiderConnection(socket: Socket) {
       await Driver.updateOne({ _id: driverId }, { currentLocation: { ...point, heading, speed, updatedAt: new Date(now) } })
     }
 
-    const booking = await Booking.findOne({ driver: driverId, status: { $in: ACTIVE_TRIP_STATUSES } }).select('status pickup drop stops')
+    if (!bookingCache || now - bookingCache.at > RIDER_STATE_CACHE_MS) bookingCache = { at: now, value: await findActiveTrip(driverId) }
+    const booking = bookingCache.value
     if (!booking) return
     const beforePickup = ['accepted', 'arriving', 'arrived'].includes(booking.status)
     const nextStop = booking.stops.find((s) => s.status === 'pending')
@@ -252,7 +279,14 @@ function onAdminConnection(socket: Socket) {
 }
 
 export function initRealtime(httpServer: HttpServer) {
-  io = new Server(httpServer, { cors: { origin: env.corsOrigin } })
+  io = new Server(httpServer, {
+    cors: { origin: env.corsOrigin },
+    // Small messages only (locations, chat): a huge payload cannot be used to exhaust memory.
+    maxHttpBufferSize: 100_000,
+    connectTimeout: 10_000,
+    pingInterval: 25_000,
+    pingTimeout: 20_000,
+  })
 
   io.of('/customer').use(appAuth('customer')).on('connection', onCustomerConnection)
   io.of('/rider').use(appAuth('driver')).on('connection', onRiderConnection)

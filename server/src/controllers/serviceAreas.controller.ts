@@ -2,6 +2,7 @@ import type { Request, Response } from 'express'
 import type { FilterQuery } from 'mongoose'
 import { ServiceArea, type ServiceAreaDocument } from '../models/ServiceArea'
 import { recordAudit } from '../utils/audit'
+import { searchRegex } from '../utils/regex'
 
 const MUTABLE_FIELDS = ['name', 'country', 'state', 'city', 'zone', 'status', 'rideEnabled', 'transportEnabled', 'geofence'] as const
 
@@ -19,9 +20,9 @@ export async function listServiceAreas(req: Request, res: Response) {
   if (status) filter.status = status as ServiceAreaDocument['status']
   if (q) {
     filter.$or = [
-      { name: { $regex: q.trim(), $options: 'i' } },
-      { city: { $regex: q.trim(), $options: 'i' } },
-      { state: { $regex: q.trim(), $options: 'i' } },
+      { name: { $regex: searchRegex(q), $options: 'i' } },
+      { city: { $regex: searchRegex(q), $options: 'i' } },
+      { state: { $regex: searchRegex(q), $options: 'i' } },
     ]
   }
   const areas = await ServiceArea.find(filter).sort({ createdAt: -1 })

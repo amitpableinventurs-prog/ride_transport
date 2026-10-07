@@ -108,6 +108,102 @@ const reportRange = [
 const prefixPaths = (prefix: string, paths: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(paths).map(([path, item]) => [`${prefix}${path}`, item]))
 
+const appPhoneBody = {
+  phone: str({ example: '9876543210', description: '10-digit Indian mobile; +91 / 0 prefixes and spaces are accepted' }),
+  userType: enumOf(['customer', 'driver', 'partner']),
+}
+
+// Mobile-app APIs (Flutter customer / rider-driver / partner apps), mounted at /api/v1/app.
+const appPaths = {
+  '/auth/otp/send': {
+    post: op('App Auth', 'Send a login OTP by SMS', {
+      auth: false,
+      description: [
+        'Step 1 of phone login and sign-up. Works for new and existing numbers.',
+        'Resend cooldown `OTP_RESEND_COOLDOWN_SECONDS` (default 30s); at most `OTP_MAX_SENDS_PER_HOUR` (default 5) sends per number per hour.',
+        'Blocked/suspended accounts get `403`. All app APIs return `503` while Settings → Maintenance mode is on.',
+      ].join('\n\n'),
+      body: obj(appPhoneBody, ['phone', 'userType']),
+      response: ref('AppOtpSent'),
+      errors: [400, 403, 429],
+    }),
+  },
+  '/auth/otp/resend': {
+    post: op('App Auth', 'Resend the login OTP', {
+      auth: false,
+      description: 'Same as `/auth/otp/send`: issues a fresh code and invalidates the previous one.',
+      body: obj(appPhoneBody, ['phone', 'userType']),
+      response: ref('AppOtpSent'),
+      errors: [400, 403, 429],
+    }),
+  },
+  '/auth/otp/verify': {
+    post: op('App Auth', 'Verify the OTP and log in', {
+      auth: false,
+      description: [
+        'Existing user: `isNewUser: false` with tokens.',
+        'New number: `isNewUser: true` with a `registrationToken` (valid 30 min) for `/auth/register`.',
+        'Wrong codes return `attemptsLeft`; after 5 wrong attempts a new OTP must be requested.',
+      ].join('\n\n'),
+      body: obj({ ...appPhoneBody, otp: str({ example: '123456', pattern: '^\\d{6}$' }) }, ['phone', 'userType', 'otp']),
+      response: { oneOf: [ref('AppAuthExistingUser'), ref('AppAuthNewUser')] },
+      errors: [400, 403, 429],
+    }),
+  },
+  '/auth/register': {
+    post: op('App Auth', 'Complete sign-up for a new phone number', {
+      auth: false,
+      description: [
+        'Required fields depend on the `userType` the OTP was verified for:',
+        '',
+        'This is the app **Profile** screen for customers and riders/drivers.',
+        '',
+        '- **customer**: `name`, `emergencyContact` (optional `email`, `gender`, `dateOfBirth`, `city`)',
+        '- **driver**: `name`, `emergencyContact`, `serviceType` (`rider` or `driver`) (optional `email`, `gender`, `dateOfBirth`; must be 18+ if given). Starts as `approvalStatus: pending` until an admin verifies documents.',
+        '- **partner**: `companyName`, `ownerName` (optional `email`, `businessRegNo`, `taxId`). Starts as `pending`.',
+      ].join('\n'),
+      body: ref('AppRegisterRequest'),
+      response: ref('AppAuthTokens'),
+      status: 201,
+      errors: [400, 409],
+    }),
+  },
+  '/auth/refresh': {
+    post: op('App Auth', 'Exchange an app refresh token for a new token pair', {
+      auth: false,
+      body: ref('RefreshRequest'),
+      response: ref('TokenPair'),
+      errors: [401],
+    }),
+  },
+  '/auth/me': {
+    get: op('App Auth', 'Profile of the logged-in app user', { app: true, response: ref('AppUser') }),
+  },
+  '/auth/logout': {
+    post: op('App Auth', 'Log out (the app discards its tokens)', { app: true, status: 204 }),
+  },
+  '/profile': {
+    get: op('App Profile', 'Get the Profile screen data', {
+      app: true,
+      description: 'Same record as `/auth/me`. `profileComplete: false` means the app should show the Profile screen (name or emergency contact missing).',
+      response: ref('AppUser'),
+    }),
+    patch: op('App Profile', 'Update the profile', {
+      app: true,
+      description: [
+        'Send only the fields that changed. Customers and riders/drivers: `name`, `email`, `gender`, `dateOfBirth`, `emergencyContact` (plus `city` for customers).',
+        'Send `null` or `""` for `email`, `gender` or `dateOfBirth` to clear them. The emergency contact can be replaced but not removed.',
+        'The phone number is the OTP-verified login and cannot be changed here; sending the same number back is allowed.',
+        'Partners: `companyName`, `ownerName`, `email`, `businessRegNo`, `taxId`.',
+      ].join('\n\n'),
+      body: ref('AppProfileUpdate'),
+      bodyRequired: false,
+      response: ref('AppUser'),
+      errors: [400, 409],
+    }),
+  },
+}
+
 // ---------------- Customer + rider apps (SRS §10.1-10.5) ----------------
 
 const place = obj({ lat: num({ example: 19.076 }), lng: num({ example: 72.8777 }), address: str({ example: 'Dadar, Mumbai' }) }, ['lat', 'lng'])
@@ -218,6 +314,138 @@ const srsAuthPaths = {
   },
 }
 
+// Response shapes for the Home / Services / Referral / onboarding screens.
+const placeItem = obj(
+  { name: str({ example: 'Vijay Nagar' }), address: str({ example: 'Vijay Nagar, Indore' }), lat: num({ example: 22.7533 }), lng: num({ example: 75.8937 }), favouriteId: { type: 'string', nullable: true, description: 'Saved-place id when favourited (filled heart), else null' } },
+  ['name', 'address', 'lat', 'lng', 'favouriteId'],
+)
+const serviceItem = obj(
+  {
+    key: str({ example: 'auto' }),
+    name: str({ example: 'Auto' }),
+    description: { type: 'string', nullable: true, example: 'Budget-friendly 3-seater' },
+    icon: str({ example: 'car-taxi-front', description: 'Icon name set in the admin panel; the app maps it to its own artwork' }),
+    seats: { type: 'integer', nullable: true, example: 3 },
+    capacityLabel: { type: 'string', nullable: true, example: null },
+    available: bool({ description: 'false when the mode is off or the location is outside every service area' }),
+    ridersNearby: { type: 'integer', nullable: true, example: 2, description: 'null when lat/lng were not sent' },
+    etaMin: { type: 'integer', nullable: true, example: 4, description: 'Nearest rider ETA in minutes; null when none or no location' },
+  },
+  ['key', 'name', 'icon', 'available'],
+)
+const allServicesResponse = {
+  ...obj(
+    {
+      serviceable: { type: 'boolean', nullable: true, description: 'null when lat/lng were not sent' },
+      serviceArea: { type: 'object', nullable: true, properties: { id: oid(), name: str(), city: str() } },
+      message: { type: 'string', nullable: true },
+      sections: arr(
+        obj(
+          {
+            mode: enumOf(['ride', 'transport']),
+            title: str({ example: 'Ride' }),
+            subtitle: str({ example: 'City trips for people. Pick an auto, bike or cab.' }),
+            enabled: bool(),
+            items: arr(serviceItem),
+          },
+          ['mode', 'title', 'subtitle', 'enabled', 'items'],
+        ),
+      ),
+    },
+    ['serviceable', 'sections'],
+  ),
+  example: {
+    serviceable: true,
+    serviceArea: { id: '6aab82095020de04ab68e9c6', name: 'Mumbai Metro', city: 'Mumbai' },
+    message: null,
+    sections: [
+      {
+        mode: 'ride',
+        title: 'Ride',
+        subtitle: 'City trips for people. Pick an auto, bike or cab.',
+        enabled: true,
+        items: [
+          { key: 'auto', name: 'Auto', description: 'Budget-friendly 3-seater', icon: 'car-taxi-front', seats: 3, capacityLabel: null, available: true, ridersNearby: 2, etaMin: 4 },
+          { key: 'bike_lite', name: 'Bike Lite', description: 'Low-cost solo rides', icon: 'bike', seats: 1, capacityLabel: null, available: true, ridersNearby: 0, etaMin: null },
+        ],
+      },
+      {
+        mode: 'transport',
+        title: 'Transport',
+        subtitle: 'Send goods across the city, from a bike parcel to a large truck.',
+        enabled: true,
+        items: [{ key: 'bike_porter', name: 'Bike Porter', description: 'Parcels, fastest delivery', icon: 'package', seats: null, capacityLabel: 'Parcels', available: true, ridersNearby: 1, etaMin: 6 }],
+      },
+    ],
+  },
+}
+const homeResponse = obj({
+  name: str({ example: 'Nikhil Sajjan' }),
+  firstName: str({ example: 'Nikhil' }),
+  initial: str({ example: 'N' }),
+  serviceable: { type: 'boolean', nullable: true },
+  city: { type: 'string', nullable: true, example: 'Indore' },
+  modes: obj({ ride: bool(), transport: bool() }),
+  activeBooking: { type: 'object', nullable: true, properties: { id: oid(), bookingCode: str({ example: 'BK-1042' }), status: str({ example: 'accepted' }), mode: enumOf(['ride', 'transport']), categoryKey: str(), drop: anyObj } },
+  savedPlaces: arr(obj({ id: oid(), label: enumOf(['home', 'work', 'other']), name: str(), address: str(), lat: num(), lng: num() })),
+  recentPlaces: arr(placeItem),
+})
+const reverseResponse = obj({ lat: num(), lng: num(), address: { type: 'string', nullable: true, example: 'Palasia, Indore' }, city: { type: 'string', nullable: true, example: 'Indore' }, serviceable: bool() })
+const referralResponse = {
+  ...obj({
+    enabled: bool(),
+    code: str({ example: 'RIDE6655' }),
+    title: str({ example: 'Invite friends to AnZ Cabs' }),
+    description: str(),
+    shareMessage: str({ example: 'Join AnZ Cabs and get ₹50 ride credit on your first ride. Use my code RIDE6655 when you sign up.' }),
+    rewardForYou: num({ example: 50 }),
+    rewardForFriend: num({ example: 50 }),
+    currency: str({ example: 'INR' }),
+    steps: arr(obj({ step: int(), title: str(), description: str() })),
+    stats: obj({ invited: int(), rewarded: int(), totalEarned: num() }),
+    referrals: arr(obj({ name: str(), joinedAt: date(), status: enumOf(['pending', 'rewarded']) })),
+    appliedCode: bool({ description: 'true when this customer already used a referral code' }),
+  }),
+  example: {
+    enabled: true,
+    code: 'RIDE6655',
+    title: 'Invite friends to AnZ Cabs',
+    description: 'When a friend completes their first ride, you both get ride credit.',
+    shareMessage: 'Join AnZ Cabs and get ₹50 ride credit on your first ride. Use my code RIDE6655 when you sign up.',
+    rewardForYou: 50,
+    rewardForFriend: 50,
+    currency: 'INR',
+    steps: [{ step: 1, title: 'Share your code', description: 'Send it to friends who are new to AnZ Cabs.' }],
+    stats: { invited: 3, rewarded: 1, totalEarned: 50 },
+    referrals: [{ name: 'Asha', joinedAt: '2026-10-01T10:00:00Z', status: 'rewarded' }],
+    appliedCode: false,
+  },
+}
+const onboardingStatusResponse = {
+  ...obj({
+    status: enumOf(['pending', 'under_review', 'approved', 'rejected']),
+    title: str({ example: 'Documents under verification' }),
+    message: { type: 'string', nullable: true, example: 'This may take up to 24 hours. Please wait!' },
+    items: arr(obj({ key: enumOf(['vehicle', 'driving_license', 'photo_name', 'vehicle_number', 'identity']), title: str({ example: 'Driving License' }), status: enumOf(['not_submitted', 'selected', 'under_review', 'verified', 'rejected']), reason: str() })),
+    nextStep: { type: 'string', nullable: true, description: 'First item still to submit or fix' },
+    hasLicense: { type: 'boolean', nullable: true },
+  }),
+  example: {
+    status: 'under_review',
+    title: 'Documents under verification',
+    message: 'This may take up to 24 hours. Please wait!',
+    items: [
+      { key: 'vehicle', title: 'Vehicle - Bike', status: 'selected' },
+      { key: 'driving_license', title: 'Driving License', status: 'verified' },
+      { key: 'photo_name', title: 'Photo and name', status: 'verified' },
+      { key: 'vehicle_number', title: 'Vehicle Number', status: 'under_review' },
+      { key: 'identity', title: 'Aadhaar or PAN card', status: 'under_review' },
+    ],
+    nextStep: null,
+    hasLicense: true,
+  },
+}
+
 const customerPaths = {
   '/profile': {
     get: appOp('Customer', 'Get profile', { response: ref('AppUser') }),
@@ -233,19 +461,30 @@ const customerPaths = {
   },
   '/home': {
     get: appOp('Customer', 'Home screen summary', {
+      response: homeResponse,
       description:
         'Name and initial for the greeting, serviceability and enabled modes at `lat`/`lng` (both optional), any open booking, saved places and the latest recent places.',
       parameters: [query('lat', 'Latitude', num()), query('lng', 'Longitude', num())],
     }),
   },
+  '/all-services': {
+    get: appOp('Customer', 'All Services screen in one call', {
+      response: allServicesResponse,
+      description:
+        'Two sections (Ride, Transport), each with `title`, `subtitle` and `items` (key, name, icon, seats or capacityLabel). `lat`/`lng` are optional: without them every active category is listed; with them `serviceable`, the `available` flag, `ridersNearby` and `etaMin` are filled. Categories are managed in the admin panel (Operations → Categories).',
+      parameters: [query('lat', 'Latitude', num()), query('lng', 'Longitude', num())],
+    }),
+  },
   '/recent-places': {
     get: appOp('Customer', 'Recent destinations', {
+      response: arr(placeItem),
       description: 'Distinct drop-offs from past bookings, newest first. `favouriteId` is set when the place is saved (filled heart): tap to un-favourite with `DELETE /saved-places/{id}`, otherwise favourite it with `POST /saved-places` (label `other`).',
       parameters: [query('limit', 'Default 6, max 20', int())],
     }),
   },
   '/places/search': {
     get: appOp('Customer', 'Search saved and recent places', {
+      response: arr(obj({ ...placeItem.properties, distanceKm: { type: 'number', nullable: true } })),
       description: 'Pickup/drop search box. Matches the customer\'s own places only; use the map SDK for city-wide search.',
       parameters: [query('q', 'Text to match in name or address (required)'), query('lat', 'Latitude for `distanceKm`', num()), query('lng', 'Longitude for `distanceKm`', num())],
       errors: [400],
@@ -253,6 +492,7 @@ const customerPaths = {
   },
   '/places/reverse': {
     get: appOp('Customer', 'Address under the pickup pin', {
+      response: reverseResponse,
       description: 'Known address within 200 m (saved or recent), else `address: null` with the service-area `city`. A geocoding provider is not wired in yet.',
       parameters: [query('lat', 'Latitude', num()), query('lng', 'Longitude', num())],
       errors: [400],
@@ -260,11 +500,13 @@ const customerPaths = {
   },
   '/referral': {
     get: appOp('Customer', 'Refer & Earn screen', {
+      response: referralResponse,
       description: 'Own referral code (created on first call), share text, reward amounts, how-it-works steps, stats and the list of invited friends.',
     }),
   },
   '/referral/apply': {
     post: appOp('Customer', 'Apply a friend\'s referral code', {
+      response: obj({ message: str(), rewardForYou: num({ example: 50 }) }),
       description: 'Once per customer, before their first completed ride. When that ride completes, both wallets get a `referral` credit (amounts in platform settings).',
       body: obj({ code: str({ example: 'RIDE6655' }) }, ['code']),
       errors: [400, 404, 409, 422],
@@ -385,32 +627,84 @@ const customerPaths = {
 }
 
 const riderPaths = {
+  '/auth/otp/send': {
+    post: op('Rider', 'Rider login: send OTP', {
+      auth: false,
+      description: 'Rider-only login. The account type is always a rider, so only the phone is sent (no `role`).',
+      body: obj({ phone: str({ example: '9876543210' }) }, ['phone']),
+      response: ref('AppOtpSent'),
+      errors: [400, 403, 429],
+    }),
+  },
+  '/auth/otp/resend': {
+    post: op('Rider', 'Rider login: resend OTP', { auth: false, body: obj({ phone: str({ example: '9876543210' }) }, ['phone']), response: ref('AppOtpSent'), errors: [400, 403, 429] }),
+  },
+  '/auth/otp/verify': {
+    post: op('Rider', 'Rider login: verify OTP, returns tokens', {
+      auth: false,
+      description: 'A new number gets a rider account immediately (`201`, `isNewUser: true`) with `approvalStatus: pending`; continue with the onboarding screens.',
+      body: obj({ phone: str(), otp: str({ pattern: '^\\d{6}$' }) }, ['phone', 'otp']),
+      response: obj({ isNewUser: bool(), accessToken: str(), refreshToken: str(), user: ref('AppUser') }),
+      errors: [400, 403, 429],
+    }),
+  },
+  '/auth/refresh': {
+    post: op('Rider', 'Rider login: new token pair from a refresh token', { auth: false, body: ref('RefreshRequest'), response: ref('TokenPair'), errors: [401] }),
+  },
+  '/auth/logout': {
+    post: appOp('Rider', 'Rider logout: revoke the refresh token and remove the FCM token', { body: obj({ refreshToken: str(), fcmToken: str() }), bodyRequired: false, status: 204 }),
+  },
+  '/auth/me': { get: appOp('Rider', 'Logged-in rider (same as GET /profile)', { response: ref('AppUser') }) },
   '/profile': {
     get: appOp('Rider', 'Get profile', { response: ref('AppUser') }),
     patch: multipart(appOp('Rider', 'Update profile', { description: 'Same fields as the customer profile.', response: ref('AppUser'), errors: [400] }), { name: str(), photo: binary('JPEG/PNG/WebP up to 5 MB') }, []),
   },
-  '/onboarding/options': { get: appOp('Rider', 'Vehicle types, services and document types for onboarding') },
+  '/onboarding/options': { get: appOp('Rider', 'Licence choices, vehicle types, services and document types for onboarding') },
+  '/onboarding/license': {
+    put: appOp('Rider', 'Do you have a driving licence? (Yes / No)', {
+      description: '"Yes" = bike taxi + delivery orders. "No" = delivery (transport) orders only, and the licence upload is skipped. Returns the services allowed for the choice.',
+      body: obj({ hasLicense: bool() }, ['hasLicense']),
+      errors: [400, 409],
+    }),
+  },
   '/onboarding': {
     post: appOp('Rider', 'Choose type (individual / partner code), vehicle type, services', {
+      description: 'Ride services are refused when the rider chose "No licence".',
       body: obj(
-        { type: enumOf(['individual', 'partner']), partnerCode: str({ example: 'P1A2B3C' }), vehicleTypeId: oid(), services: arr(str({ example: 'bike' })), serviceType: enumOf(['rider', 'driver']) },
+        {
+          type: enumOf(['individual', 'partner']),
+          partnerCode: str({ example: 'P1A2B3C' }),
+          vehicleTypeId: oid(),
+          services: arr(str({ example: 'bike' })),
+          serviceType: enumOf(['rider', 'driver']),
+          hasLicense: bool({ description: 'Optional; defaults to the answer saved by PUT /onboarding/license' }),
+        },
         ['type', 'vehicleTypeId', 'services'],
       ),
       errors: [400, 409],
     }),
   },
+  '/onboarding/status': {
+    get: appOp('Rider', 'Documents under verification checklist', {
+      response: onboardingStatusResponse,
+      description:
+        'One row per step: vehicle (selected), driving_license (hidden without a licence), photo_name, vehicle_number, identity (Aadhaar or PAN). Item status: not_submitted, selected, under_review, verified or rejected (with a reason). `status` is pending, under_review, approved or rejected; `nextStep` is the first item to fix.',
+    }),
+  },
   '/documents': {
     post: multipart(
-      appOp('Rider', 'Upload a document with number + expiry', {
-        description: 'Re-uploading a type replaces it and sends it back for review. Required: driving_license, vehicle_rc, vehicle_insurance, aadhaar.',
+      appOp('Rider', 'Upload a document (front, back, number)', {
+        description:
+          'Re-uploading a type replaces it and sends it back for review. Needed for approval: driving_license (front + back, unless the rider has no licence) and one of aadhaar / pan. Number formats: driving licence like KA12345677899029, Aadhaar 12 digits, PAN like ABCDE1234F. vehicle_rc is uploaded with the vehicle (POST /vehicle) or here.',
         status: 201,
-        errors: [400],
+        errors: [400, 409],
       }),
       {
-        file: binary('JPEG/PNG/WebP/PDF up to 5 MB'),
+        file: binary('Front side. JPEG/PNG/WebP/PDF up to 5 MB'),
+        backFile: binary('Back side. Required for driving_license; optional for vehicle_rc and aadhaar'),
         docType: enumOf(RIDER_DOC_TYPES),
         docNumber: str(),
-        expiryDate: str({ format: 'date', description: 'Required for licence, insurance, PUC and permit' }),
+        expiryDate: str({ format: 'date', description: 'Required for insurance, PUC and permit' }),
       },
       ['file', 'docType', 'docNumber'],
     ),
@@ -418,15 +712,24 @@ const riderPaths = {
   },
   '/vehicle': {
     get: appOp('Rider', 'Current vehicle + pending change requests'),
-    post: appOp('Rider', 'Register a vehicle / request a vehicle change', {
-      description: 'Created inactive; goes live when an admin activates it (Fleet → Vehicles).',
-      body: obj(
-        { vehicleTypeId: oid(), categoryKey: str({ example: 'bike' }), registrationNumber: str({ example: 'MH12AB1234' }), model: str(), manufacturer: str() },
-        ['vehicleTypeId', 'categoryKey', 'registrationNumber', 'model'],
-      ),
-      status: 201,
-      errors: [400, 409],
-    }),
+    post: multipart(
+      appOp('Rider', 'Vehicle number screen: register or correct the vehicle', {
+        description:
+          'JSON or multipart. After onboarding only `registrationNumber` is needed; vehicle type and category come from the onboarding choice. Optional RC photos (`rcFront`, `rcBack`) are saved as the vehicle_rc document. Before approval, sending it again corrects the pending request (200); after approval it files a change request (201). Created inactive; goes live when an admin activates it.',
+        status: 201,
+        errors: [400, 409],
+      }),
+      {
+        registrationNumber: str({ example: 'MH12AB1234' }),
+        vehicleTypeId: oid('Optional: defaults to the onboarding vehicle type'),
+        categoryKey: str({ description: 'Optional: defaults to the chosen service for this vehicle type' }),
+        model: str({ description: 'Optional: defaults to the vehicle type name' }),
+        manufacturer: str(),
+        rcFront: binary('RC front side (optional)'),
+        rcBack: binary('RC back side (optional)'),
+      },
+      ['registrationNumber'],
+    ),
   },
   '/approval-status': { get: appOp('Rider', 'pending, under_review, approved or rejected + reasons') },
   '/duty/online': {
@@ -548,7 +851,7 @@ export const openApiSpec = {
     title: 'Rider & Transport Admin API',
     version: '1.0.0',
     description: [
-      'REST API for the AnZ Cabs admin panel (`/admin/*`) and the customer and rider mobile apps (`/customer/*`, `/rider/*`).',
+      'REST API for the AnZ Cabs admin panel (`/admin/*`) and the mobile apps (`/auth/*`, `/customer/*`, `/rider/*`, `/app/*`).',
       '',
       '### Admin APIs',
       '1. `POST /admin/auth/login` with email + password. When admin OTP is on (Settings → Security, default on), the response has `otpRequired: true` and an `otpToken`, and a 6-digit OTP is sent by SMS to the phone on the admin account.',
@@ -559,6 +862,8 @@ export const openApiSpec = {
       '',
       '### Mobile app APIs',
       'Customer and rider apps (SRS §10): `POST /auth/otp/send` → `POST /auth/otp/verify` with `role: customer | rider`, then `/customer/*` or `/rider/*`. Paste the app `accessToken` into **appBearerAuth**. App and admin tokens are not interchangeable.',
+      '',
+      'The earlier `/app/*` APIs (with a separate `/app/auth/register` step) are still served and are used by the current Flutter app.',
       '',
       'In development the OTP is also returned as `devOtp` and printed in the server console. It is never returned in production.',
       '',
@@ -573,6 +878,8 @@ export const openApiSpec = {
     { name: 'Rider', description: 'SRS §10.3: rider app' },
     { name: 'Common', description: 'SRS §10.5: app config, CMS, push devices' },
     { name: 'Public', description: 'Pages opened from shared links, no login' },
+    { name: 'App Auth', description: 'Phone + OTP login for the customer, rider/driver and partner apps' },
+    { name: 'App Profile', description: 'The app Profile screen: name, email, gender, date of birth, emergency contact' },
     { name: 'Admin Auth', description: 'Admin email/password login with an OTP second step' },
     { name: 'Dashboard' },
     { name: 'Admins' },
@@ -583,7 +890,7 @@ export const openApiSpec = {
     { name: 'Drivers' },
     { name: 'Partners' },
     { name: 'Bookings' },
-    { name: 'Categories' },
+    { name: 'Service Categories' },
     { name: 'SOS' },
     { name: 'Vehicles' },
     { name: 'Vehicle Types' },
@@ -1289,6 +1596,7 @@ export const openApiSpec = {
     ...prefixPaths('/customer', customerPaths),
     ...prefixPaths('/rider', riderPaths),
     ...commonPaths,
+    ...prefixPaths('/app', appPaths),
     ...prefixPaths('/admin', {
     // ---------------- Auth ----------------
     '/auth/login': {
@@ -1503,13 +1811,13 @@ export const openApiSpec = {
         errors: [400, 404],
       }),
     },
-    '/categories': {
-      get: op('Categories', 'List service categories', {
+    '/service-categories': {
+      get: op('Service Categories', 'List service categories', {
         permission: 'bookings.view',
         parameters: [query('mode', 'Service mode', enumOf(SERVICE_MODE))],
         response: listOf('Category'),
       }),
-      post: op('Categories', 'Create a service category', {
+      post: op('Service Categories', 'Create a service category', {
         permission: 'bookings.manage',
         body: ref('CategoryCreate'),
         response: ref('Category'),
@@ -1517,15 +1825,15 @@ export const openApiSpec = {
         errors: [400, 409],
       }),
     },
-    '/categories/{id}': {
-      patch: op('Categories', 'Update a service category', {
+    '/service-categories/{id}': {
+      patch: op('Service Categories', 'Update a service category', {
         permission: 'bookings.manage',
         parameters: [idParam],
         body: ref('CategoryUpdate'),
         response: ref('Category'),
         errors: [404],
       }),
-      delete: op('Categories', 'Delete a service category', { permission: 'bookings.manage', parameters: [idParam], status: 204, errors: [404] }),
+      delete: op('Service Categories', 'Delete a service category', { permission: 'bookings.manage', parameters: [idParam], status: 204, errors: [404] }),
     },
     '/sos': {
       get: op('SOS', 'List SOS requests', { permission: 'bookings.view', response: listOf('SosRequest') }),

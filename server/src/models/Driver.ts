@@ -20,6 +20,8 @@ const driverSchema = new Schema(
       partner: { type: Schema.Types.ObjectId, ref: 'TransportPartner', default: null },
       vehicleType: { type: Schema.Types.ObjectId, ref: 'VehicleType', default: null },
       services: { type: [String], default: undefined },
+      // "Do you have a driving licence?": false limits the rider to delivery (transport) services.
+      hasLicense: { type: Boolean },
       completedAt: { type: Date },
     },
     lastSelfieAt: { type: Date },

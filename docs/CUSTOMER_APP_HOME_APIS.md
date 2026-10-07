@@ -21,11 +21,35 @@ Errors are `{ "message": "..." }` with a 4xx status.
 | Pickup | Heart on a recent place | `POST /customer/saved-places`, `DELETE /customer/saved-places/:id` |
 | Pickup | "For me" dropdown | Not supported yet: bookings have no passenger field (see Notes) |
 | Home tab (Ride / Transport) | "Hi Nikhil", avatar "N", category cards | `GET /customer/home`, `GET /customer/services` |
-| Service tab | All Ride and Transport categories | `GET /customer/services` |
+| Service tab ("All Services") | Ride and Transport sections with every category | `GET /customer/all-services` |
 | Refer & Earn | Code, copy, how it works | `GET /customer/referral` |
 | Refer & Earn | Friend enters a code | `POST /customer/referral/apply` |
 
 ## New endpoints
+
+### GET /customer/all-services
+Query: `lat`, `lng` (optional). The whole "All Services" screen in one call; nothing else is needed to draw it.
+
+```json
+{
+  "serviceable": true,
+  "serviceArea": { "id": "...", "name": "Mumbai Metro", "city": "Mumbai" },
+  "message": null,
+  "sections": [
+    {
+      "mode": "ride", "title": "Ride", "subtitle": "City trips for people. Pick an auto, bike or cab.", "enabled": true,
+      "items": [ { "key": "auto", "name": "Auto", "description": "Budget-friendly 3-seater", "icon": "car-taxi-front", "seats": 3, "capacityLabel": null, "available": true, "ridersNearby": 2, "etaMin": 4 } ]
+    },
+    { "mode": "transport", "title": "Transport", "subtitle": "Send goods across the city, from a bike parcel to a large truck.", "enabled": true, "items": [] }
+  ]
+}
+```
+- Item order and which items appear are managed in the admin panel (Operations → Categories: active/inactive, sort order, name, icon).
+- Without `lat`/`lng`: `serviceable` is `null`, every active category is listed and `ridersNearby` / `etaMin` are `null`.
+- Outside every service area: `serviceable: false`, a `message`, and every item has `available: false`.
+- `icon` is a name set in the admin panel (e.g. `bike`, `car`); the app maps it to its own artwork.
+- The section titles and subtitles are fixed in the server code, not editable from the admin panel.
+- Tapping an item continues to `POST /customer/fare-estimate` with its `key` as `categoryKey`.
 
 ### GET /customer/home
 Query: `lat`, `lng` (optional). One call for the Home tab.

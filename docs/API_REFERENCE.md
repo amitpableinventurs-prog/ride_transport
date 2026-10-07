@@ -52,7 +52,9 @@ Errors: 400 invalid amount or signature, 404 order or booking not found, 409 tri
 
 | Who | How | Token used on |
 |---|---|---|
-| Customer / rider app | `POST /api/v1/auth/otp/send` then `POST /api/v1/auth/otp/verify`. Body: `phone` plus `userType` (`customer` or `driver`) or `role` (`customer` or `rider`) | `/customer/*`, `/rider/*`, `/common/*` |
+| Customer / rider app (new) | `POST /api/v1/auth/otp/send` then `POST /api/v1/auth/otp/verify`. Body: `phone` plus `userType` (`customer` or `driver`) or `role` (`customer` or `rider`) | `/customer/*`, `/rider/*`, `/common/*` |
+| Customer / rider / partner app (earlier, still served, used by the Flutter app) | `POST /api/v1/app/auth/otp/send`, `/app/auth/otp/resend`, `/app/auth/otp/verify`, `/app/auth/register`, `/app/auth/refresh`, `/app/auth/me`, `/app/auth/logout`. Body: `phone` plus `userType` (`customer`, `driver`, `partner`) | `/app/profile` and the same app APIs |
+| Rider app (own login, no role needed) | `POST /api/v1/rider/auth/otp/send`, `/rider/auth/otp/resend`, `/rider/auth/otp/verify`, `/rider/auth/refresh`, `/rider/auth/logout`, `/rider/auth/me`. Body: `phone` (and `otp`) | `/rider/*` |
 | Admin panel | `POST /api/v1/admin/auth/login` (email and password), then `POST /api/v1/admin/auth/login/verify-otp` | `/admin/*` |
 
 Send `Authorization: Bearer <accessToken>`. Access tokens are short-lived: use `POST /auth/refresh` (single-use refresh tokens). In development, the OTP is returned as `devOtp` in the send response.
@@ -136,6 +138,18 @@ Responses: 200, 400, 401
 #### `GET /customer/home` — Home screen summary
 
 Name and initial for the greeting, serviceability and enabled modes at `lat`/`lng` (both optional), any open booking, saved places and the latest recent places.
+
+Auth: Bearer token
+
+Parameters:
+- `lat` (query): Latitude
+- `lng` (query): Longitude
+
+Responses: 200, 401
+
+#### `GET /customer/all-services` — All Services screen in one call
+
+Two sections (Ride, Transport), each with `title`, `subtitle` and `items` (key, name, icon, seats or capacityLabel). `lat`/`lng` are optional: without them every active category is listed; with them `serviceable`, the `available` flag, `ridersNearby` and `etaMin` are filled. Categories are managed in the admin panel (Operations → Categories).
 
 Auth: Bearer token
 
@@ -573,6 +587,63 @@ Responses: 200, 401, 409
 
 ## Rider
 
+#### `POST /rider/auth/otp/send` — Rider login: send OTP
+
+Rider-only login. The account type is always a rider, so only the phone is sent (no `role`).
+
+Auth: Public (no token)
+
+Body:
+- `phone` (string, required) e.g. `"9876543210"`
+
+Responses: 200, 400, 403, 429
+
+#### `POST /rider/auth/otp/resend` — Rider login: resend OTP
+
+Auth: Public (no token)
+
+Body:
+- `phone` (string, required) e.g. `"9876543210"`
+
+Responses: 200, 400, 403, 429
+
+#### `POST /rider/auth/otp/verify` — Rider login: verify OTP, returns tokens
+
+A new number gets a rider account immediately (`201`, `isNewUser: true`) with `approvalStatus: pending`; continue with the onboarding screens.
+
+Auth: Public (no token)
+
+Body:
+- `phone` (string, required)
+- `otp` (string, required)
+
+Responses: 200, 400, 403, 429
+
+#### `POST /rider/auth/refresh` — Rider login: new token pair from a refresh token
+
+Auth: Public (no token)
+
+Body:
+- `refreshToken` (string, required)
+
+Responses: 200, 401
+
+#### `POST /rider/auth/logout` — Rider logout: revoke the refresh token and remove the FCM token
+
+Auth: Bearer token
+
+Body:
+- `refreshToken` (string)
+- `fcmToken` (string)
+
+Responses: 204, 401
+
+#### `GET /rider/auth/me` — Logged-in rider (same as GET /profile)
+
+Auth: Bearer token
+
+Responses: 200, 401
+
 #### `GET /rider/profile` — Get profile
 
 Auth: Bearer token
@@ -585,19 +656,32 @@ Same fields as the customer profile.
 
 Auth: Bearer token
 
-Body:
+Body (multipart):
 - `name` (string)
 - `photo` (string): JPEG/PNG/WebP up to 5 MB
 
 Responses: 200, 400, 401
 
-#### `GET /rider/onboarding/options` — Vehicle types, services and document types for onboarding
+#### `GET /rider/onboarding/options` — Licence choices, vehicle types, services and document types for onboarding
 
 Auth: Bearer token
 
 Responses: 200, 401
 
+#### `PUT /rider/onboarding/license` — Do you have a driving licence? (Yes / No)
+
+"Yes" = bike taxi + delivery orders. "No" = delivery (transport) orders only, and the licence upload is skipped. Returns the services allowed for the choice.
+
+Auth: Bearer token
+
+Body:
+- `hasLicense` (boolean, required)
+
+Responses: 200, 400, 401, 409
+
 #### `POST /rider/onboarding` — Choose type (individual / partner code), vehicle type, services
+
+Ride services are refused when the rider chose "No licence".
 
 Auth: Bearer token
 
@@ -607,22 +691,32 @@ Body:
 - `vehicleTypeId` (string, required) e.g. `"665f1c2e9b1e8a0012345678"`
 - `services` (string[], required)
 - `serviceType` (enum(rider|driver))
+- `hasLicense` (boolean): Optional; defaults to the answer saved by PUT /onboarding/license
 
 Responses: 200, 400, 401, 409
 
-#### `POST /rider/documents` — Upload a document with number + expiry
+#### `GET /rider/onboarding/status` — Documents under verification checklist
 
-Re-uploading a type replaces it and sends it back for review. Required: driving_license, vehicle_rc, vehicle_insurance, aadhaar.
+One row per step: vehicle (selected), driving_license (hidden without a licence), photo_name, vehicle_number, identity (Aadhaar or PAN). Item status: not_submitted, selected, under_review, verified or rejected (with a reason). `status` is pending, under_review, approved or rejected; `nextStep` is the first item to fix.
 
 Auth: Bearer token
 
-Body:
-- `file` (string, required): JPEG/PNG/WebP/PDF up to 5 MB
+Responses: 200, 401
+
+#### `POST /rider/documents` — Upload a document (front, back, number)
+
+Re-uploading a type replaces it and sends it back for review. Needed for approval: driving_license (front + back, unless the rider has no licence) and one of aadhaar / pan. Number formats: driving licence like KA12345677899029, Aadhaar 12 digits, PAN like ABCDE1234F. vehicle_rc is uploaded with the vehicle (POST /vehicle) or here.
+
+Auth: Bearer token
+
+Body (multipart):
+- `file` (string, required): Front side. JPEG/PNG/WebP/PDF up to 5 MB
+- `backFile` (string): Back side. Required for driving_license; optional for vehicle_rc and aadhaar
 - `docType` (enum(driving_license|vehicle_rc|vehicle_insurance|aadhaar|pan|pollution_certificate|permit|police_verification), required)
 - `docNumber` (string, required)
-- `expiryDate` (string): Required for licence, insurance, PUC and permit
+- `expiryDate` (string): Required for insurance, PUC and permit
 
-Responses: 201, 400, 401
+Responses: 201, 400, 401, 409
 
 #### `GET /rider/documents` — Documents with verification status
 
@@ -636,18 +730,20 @@ Auth: Bearer token
 
 Responses: 200, 401
 
-#### `POST /rider/vehicle` — Register a vehicle / request a vehicle change
+#### `POST /rider/vehicle` — Vehicle number screen: register or correct the vehicle
 
-Created inactive; goes live when an admin activates it (Fleet → Vehicles).
+JSON or multipart. After onboarding only `registrationNumber` is needed; vehicle type and category come from the onboarding choice. Optional RC photos (`rcFront`, `rcBack`) are saved as the vehicle_rc document. Before approval, sending it again corrects the pending request (200); after approval it files a change request (201). Created inactive; goes live when an admin activates it.
 
 Auth: Bearer token
 
-Body:
-- `vehicleTypeId` (string, required) e.g. `"665f1c2e9b1e8a0012345678"`
-- `categoryKey` (string, required) e.g. `"bike"`
+Body (multipart):
 - `registrationNumber` (string, required) e.g. `"MH12AB1234"`
-- `model` (string, required)
+- `vehicleTypeId` (string): Optional: defaults to the onboarding vehicle type e.g. `"665f1c2e9b1e8a0012345678"`
+- `categoryKey` (string): Optional: defaults to the chosen service for this vehicle type
+- `model` (string): Optional: defaults to the vehicle type name
 - `manufacturer` (string)
+- `rcFront` (string): RC front side (optional)
+- `rcBack` (string): RC back side (optional)
 
 Responses: 201, 400, 401, 409
 
@@ -681,7 +777,7 @@ No face-match provider is integrated yet: the selfie is stored for admin review 
 
 Auth: Bearer token
 
-Body:
+Body (multipart):
 - `selfie` (string, required): JPEG/PNG/WebP
 
 Responses: 200, 400, 401
@@ -745,7 +841,7 @@ Auth: Bearer token
 Parameters:
 - `id` (path, required): Booking id
 
-Body:
+Body (multipart):
 - `otp` (string, required) e.g. `"4821"`
 - `goodsPhoto` (string): Required for transport
 
@@ -759,7 +855,7 @@ Parameters:
 - `id` (path, required): Booking id
 - `stopId` (path, required): Stop id
 
-Body:
+Body (multipart):
 - `otp` (string, required)
 - `pod` (string, required): Proof-of-delivery photo
 
@@ -950,6 +1046,7 @@ Parameters:
 Responses: 200, 401
 
 
+
 ## Common
 
 #### `GET /common/app-config` — Min version, feature flags, support numbers
@@ -1001,6 +1098,144 @@ Parameters:
 - `token` (path, required): Invoice token
 
 Responses: 200, 404
+
+
+## App Auth
+
+#### `POST /app/auth/otp/send` — Send a login OTP by SMS
+
+Step 1 of phone login and sign-up. Works for new and existing numbers.
+
+Resend cooldown `OTP_RESEND_COOLDOWN_SECONDS` (default 30s); at most `OTP_MAX_SENDS_PER_HOUR` (default 5) sends per number per hour.
+
+Blocked/suspended accounts get `403`. All app APIs return `503` while Settings → Maintenance mode is on.
+
+Auth: Public (no token)
+
+Body:
+- `phone` (string, required): 10-digit Indian mobile; +91 / 0 prefixes and spaces are accepted e.g. `"9876543210"`
+- `userType` (enum(customer|driver|partner), required)
+
+Responses: 200, 400, 403, 429
+
+#### `POST /app/auth/otp/resend` — Resend the login OTP
+
+Same as `/auth/otp/send`: issues a fresh code and invalidates the previous one.
+
+Auth: Public (no token)
+
+Body:
+- `phone` (string, required): 10-digit Indian mobile; +91 / 0 prefixes and spaces are accepted e.g. `"9876543210"`
+- `userType` (enum(customer|driver|partner), required)
+
+Responses: 200, 400, 403, 429
+
+#### `POST /app/auth/otp/verify` — Verify the OTP and log in
+
+Existing user: `isNewUser: false` with tokens.
+
+New number: `isNewUser: true` with a `registrationToken` (valid 30 min) for `/auth/register`.
+
+Wrong codes return `attemptsLeft`; after 5 wrong attempts a new OTP must be requested.
+
+Auth: Public (no token)
+
+Body:
+- `phone` (string, required): 10-digit Indian mobile; +91 / 0 prefixes and spaces are accepted e.g. `"9876543210"`
+- `userType` (enum(customer|driver|partner), required)
+- `otp` (string, required) e.g. `"123456"`
+
+Responses: 200, 400, 403, 429
+
+#### `POST /app/auth/register` — Complete sign-up for a new phone number
+
+Required fields depend on the `userType` the OTP was verified for:
+
+This is the app **Profile** screen for customers and riders/drivers.
+
+- **customer**: `name`, `emergencyContact` (optional `email`, `gender`, `dateOfBirth`, `city`)
+- **driver**: `name`, `emergencyContact`, `serviceType` (`rider` or `driver`) (optional `email`, `gender`, `dateOfBirth`; must be 18+ if given). Starts as `approvalStatus: pending` until an admin verifies documents.
+- **partner**: `companyName`, `ownerName` (optional `email`, `businessRegNo`, `taxId`). Starts as `pending`.
+
+Auth: Public (no token)
+
+Body:
+- `registrationToken` (string, required)
+- `name` (string): customer / driver (required) e.g. `"Aarav Patel"`
+- `email` (string)
+- `gender` (enum(male|female|other)): customer / driver
+- `dateOfBirth` (string): customer / driver, YYYY-MM-DD e.g. `"1995-08-14"`
+- `emergencyContact` (object)
+  - `name` (string, required) e.g. `"Riya Patel"`
+  - `phone` (string, required): Indian mobile; stored as +91XXXXXXXXXX. Must differ from the user’s own number. e.g. `"9876543222"`
+- `city` (string): customer
+- `serviceType` (enum(rider|driver)): driver
+- `companyName` (string): partner
+- `ownerName` (string): partner
+- `businessRegNo` (string): partner
+- `taxId` (string): partner
+
+Responses: 201, 400, 409
+
+#### `POST /app/auth/refresh` — Exchange an app refresh token for a new token pair
+
+Auth: Public (no token)
+
+Body:
+- `refreshToken` (string, required)
+
+Responses: 200, 401
+
+#### `GET /app/auth/me` — Profile of the logged-in app user
+
+Auth: Bearer token
+
+Responses: 200, 401
+
+#### `POST /app/auth/logout` — Log out (the app discards its tokens)
+
+Auth: Bearer token
+
+Responses: 204, 401
+
+
+## App Profile
+
+#### `GET /app/profile` — Get the Profile screen data
+
+Same record as `/auth/me`. `profileComplete: false` means the app should show the Profile screen (name or emergency contact missing).
+
+Auth: Bearer token
+
+Responses: 200, 401
+
+#### `PATCH /app/profile` — Update the profile
+
+Send only the fields that changed. Customers and riders/drivers: `name`, `email`, `gender`, `dateOfBirth`, `emergencyContact` (plus `city` for customers).
+
+Send `null` or `""` for `email`, `gender` or `dateOfBirth` to clear them. The emergency contact can be replaced but not removed.
+
+The phone number is the OTP-verified login and cannot be changed here; sending the same number back is allowed.
+
+Partners: `companyName`, `ownerName`, `email`, `businessRegNo`, `taxId`.
+
+Auth: Bearer token
+
+Body:
+- `name` (string) e.g. `"Aarav Patel"`
+- `email` (string)
+- `gender` (enum(male|female|other))
+- `dateOfBirth` (string) e.g. `"1995-08-14"`
+- `emergencyContact` (object)
+  - `name` (string, required) e.g. `"Riya Patel"`
+  - `phone` (string, required): Indian mobile; stored as +91XXXXXXXXXX. Must differ from the user’s own number. e.g. `"9876543222"`
+- `city` (string): customer
+- `companyName` (string): partner
+- `ownerName` (string): partner
+- `businessRegNo` (string): partner
+- `taxId` (string): partner
+
+Responses: 200, 400, 401, 409
 
 
 ## Admin Auth
@@ -1370,9 +1605,9 @@ Body:
 Responses: 200, 400, 401, 403, 404
 
 
-## Categories
+## Service Categories
 
-#### `GET /admin/categories` — List service categories
+#### `GET /admin/service-categories` — List service categories
 
 **Permission:** `bookings.view`
 
@@ -1383,7 +1618,7 @@ Parameters:
 
 Responses: 200, 401, 403
 
-#### `POST /admin/categories` — Create a service category
+#### `POST /admin/service-categories` — Create a service category
 
 **Permission:** `bookings.manage`
 
@@ -1403,7 +1638,7 @@ Body:
 
 Responses: 201, 400, 401, 403, 409
 
-#### `PATCH /admin/categories/{id}` — Update a service category
+#### `PATCH /admin/service-categories/{id}` — Update a service category
 
 **Permission:** `bookings.manage`
 
@@ -1424,7 +1659,7 @@ Body:
 
 Responses: 200, 401, 403, 404
 
-#### `DELETE /admin/categories/{id}` — Delete a service category
+#### `DELETE /admin/service-categories/{id}` — Delete a service category
 
 **Permission:** `bookings.manage`
 

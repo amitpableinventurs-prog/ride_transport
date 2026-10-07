@@ -7,6 +7,8 @@ const documentSchema = new Schema(
     docType: { type: String, required: true },
     docNumber: { type: String, trim: true },
     fileUrl: { type: String, required: true },
+    // Back side of two-sided documents (driving licence, RC, Aadhaar).
+    backUrl: { type: String },
     status: { type: String, enum: ['pending', 'verified', 'rejected', 'expired'], default: 'pending' },
     expiryDate: { type: Date },
     reviewedBy: { type: Schema.Types.ObjectId, ref: 'Admin' },

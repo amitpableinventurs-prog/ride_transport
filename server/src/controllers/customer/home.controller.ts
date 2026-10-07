@@ -3,6 +3,8 @@ import type { Request, Response } from 'express'
 import type { HydratedDocument } from 'mongoose'
 import { Booking, OPEN_BOOKING_STATUSES } from '../../models/Booking'
 import { Customer, type CustomerDocument } from '../../models/Customer'
+import { ServiceCategory } from '../../models/ServiceCategory'
+import { nearbyAvailability } from './account.controller'
 import { findServiceArea, haversineKm, parseLatLng, type LatLng } from '../../utils/geo'
 import { HttpError, requireString } from '../../utils/http'
 import { ensureReferralCode } from '../../utils/referral'
@@ -151,4 +153,47 @@ export async function applyReferral(req: Request, res: Response) {
   const claimed = await Customer.updateOne({ _id: customer._id, referredBy: null }, { $set: { referredBy: owner._id } })
   if (!claimed.modifiedCount) throw new HttpError(409, 'You have already used a referral code')
   res.json({ message: `Code applied. You will get ₹${settings.referralRewardReferee} ride credit after your first ride.`, rewardForYou: settings.referralRewardReferee })
+}
+
+// ---------- All Services (Service tab) ----------
+
+const SERVICE_SECTIONS = [
+  { mode: 'ride', title: 'Ride', subtitle: 'City trips for people. Pick an auto, bike or cab.' },
+  { mode: 'transport', title: 'Transport', subtitle: 'Send goods across the city, from a bike parcel to a large truck.' },
+] as const
+
+// GET /all-services?lat=&lng=: the whole "All Services" screen in one call. lat/lng are optional: without them every
+// active category is listed with no rider counts; with them each item also says whether it can be booked there.
+export async function getAllServices(req: Request, res: Response) {
+  const point = parseLatLng(req.query.lat, req.query.lng)
+  const [settings, categories, area] = await Promise.all([
+    getPlatformSettings(),
+    ServiceCategory.find({ status: 'active' }).sort({ sortOrder: 1 }),
+    point ? findServiceArea(point) : null,
+  ])
+  const modeOn = { ride: settings.rideServiceEnabled && (!point || Boolean(area?.rideEnabled)), transport: settings.transportServiceEnabled && (!point || Boolean(area?.transportEnabled)) }
+  const availability = point && area ? await nearbyAvailability(point, settings.dispatchRadiusKm, categories.map((c) => c.key)) : null
+
+  res.json({
+    serviceable: point ? Boolean(area) : null,
+    serviceArea: area ? { id: area.id, name: area.name, city: area.city } : null,
+    message: point && !area ? "We don't operate at this location yet" : null,
+    sections: SERVICE_SECTIONS.map((section) => ({
+      ...section,
+      enabled: modeOn[section.mode],
+      items: categories
+        .filter((c) => c.mode === section.mode)
+        .map((c) => ({
+          key: c.key,
+          name: c.name,
+          description: c.description ?? null,
+          icon: c.icon,
+          seats: c.seats ?? null,
+          capacityLabel: c.capacityLabel ?? null,
+          available: modeOn[section.mode],
+          ridersNearby: availability?.get(c.key)?.ridersNearby ?? null,
+          etaMin: availability?.get(c.key)?.etaMin ?? null,
+        })),
+    })),
+  })
 }

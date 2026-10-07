@@ -9,7 +9,7 @@ import { Driver } from '../../models/Driver'
 import { ServiceCategory } from '../../models/ServiceCategory'
 import { Vehicle } from '../../models/Vehicle'
 import { applyCoupon } from '../../utils/coupons'
-import { etaMinutes, findServiceArea, haversineKm, parseLatLng, parsePlace } from '../../utils/geo'
+import { etaMinutes, findServiceArea, haversineKm, parseLatLng, parsePlace, type LatLng } from '../../utils/geo'
 import { HttpError, optionalString, parseAmount, requireString } from '../../utils/http'
 import { normalizeIndianMobile } from '../../utils/phone'
 import { getPlatformSettings } from '../../utils/settings'
@@ -93,6 +93,26 @@ export async function putEmergencyContacts(req: Request, res: Response) {
 
 // ---------- Services at a location ----------
 
+/** Online riders within the dispatch radius and the nearest ETA, per category key. */
+export async function nearbyAvailability(point: LatLng, radiusKm: number, categoryKeys: string[]) {
+  const riders = await Driver.find({
+    status: 'active',
+    approvalStatus: 'verified',
+    onlineStatus: 'online',
+    'currentLocation.updatedAt': { $gte: new Date(Date.now() - RIDER_LOCATION_FRESH_MS) },
+  }).select('currentLocation onboarding.services')
+  const nearby = riders.filter((r) => haversineKm(point, { lat: r.currentLocation!.lat!, lng: r.currentLocation!.lng! }) <= radiusKm)
+  const vehicles = await Vehicle.find({ ownerType: 'driver', ownerId: { $in: nearby.map((r) => r._id) }, status: 'active' }).select('ownerId categoryKey')
+
+  return new Map(
+    categoryKeys.map((key) => {
+      const eligible = nearby.filter((r) => r.onboarding?.services?.includes(key) || vehicles.some((v) => v.ownerId.equals(r._id) && v.categoryKey === key))
+      const etas = eligible.map((r) => etaMinutes({ lat: r.currentLocation!.lat!, lng: r.currentLocation!.lng! }, point))
+      return [key, { ridersNearby: eligible.length, etaMin: etas.length ? Math.min(...etas) : null }] as const
+    }),
+  )
+}
+
 // GET /services?lat=&lng=
 export async function listServices(req: Request, res: Response) {
   const point = parseLatLng(req.query.lat, req.query.lng)
@@ -110,31 +130,17 @@ export async function listServices(req: Request, res: Response) {
   ]
   const categories = await ServiceCategory.find({ status: 'active', mode: { $in: modes } }).sort({ sortOrder: 1 })
 
-  // Nearby online riders and the categories each can serve, for per-category ETAs.
-  const riders = await Driver.find({
-    status: 'active',
-    approvalStatus: 'verified',
-    onlineStatus: 'online',
-    'currentLocation.updatedAt': { $gte: new Date(Date.now() - RIDER_LOCATION_FRESH_MS) },
-  }).select('currentLocation onboarding.services')
-  const nearby = riders.filter((r) => haversineKm(point, { lat: r.currentLocation!.lat!, lng: r.currentLocation!.lng! }) <= settings.dispatchRadiusKm)
-  const vehicles = await Vehicle.find({ ownerType: 'driver', ownerId: { $in: nearby.map((r) => r._id) }, status: 'active' }).select('ownerId categoryKey')
-
-  const items = categories.map((c) => {
-    const eligible = nearby.filter((r) => r.onboarding?.services?.includes(c.key) || vehicles.some((v) => v.ownerId.equals(r._id) && v.categoryKey === c.key))
-    const etas = eligible.map((r) => etaMinutes({ lat: r.currentLocation!.lat!, lng: r.currentLocation!.lng! }, point))
-    return {
-      key: c.key,
-      mode: c.mode,
-      name: c.name,
-      description: c.description,
-      icon: c.icon,
-      seats: c.seats,
-      capacityLabel: c.capacityLabel,
-      ridersNearby: eligible.length,
-      etaMin: etas.length ? Math.min(...etas) : null,
-    }
-  })
+  const availability = await nearbyAvailability(point, settings.dispatchRadiusKm, categories.map((c) => c.key))
+  const items = categories.map((c) => ({
+    key: c.key,
+    mode: c.mode,
+    name: c.name,
+    description: c.description,
+    icon: c.icon,
+    seats: c.seats,
+    capacityLabel: c.capacityLabel,
+    ...availability.get(c.key)!,
+  }))
 
   res.json({
     serviceable: true,

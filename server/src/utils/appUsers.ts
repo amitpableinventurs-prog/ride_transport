@@ -53,6 +53,7 @@ export function isAppUserActive(user: AppUser): boolean {
 // Profile screen). The app shows that screen while this is false.
 export function isProfileComplete(user: AppUser): boolean {
   if (user.type === 'partner') return Boolean(user.doc.companyName && user.doc.ownerName)
+  if (user.type === 'driver') return Boolean(user.doc.name && user.doc.photoUrl && user.doc.gender && user.doc.dateOfBirth)
   return Boolean(user.doc.name && user.doc.emergencyContact?.name && user.doc.emergencyContact?.phone)
 }
 

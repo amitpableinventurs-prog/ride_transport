@@ -17,6 +17,7 @@ router.get('/profile', profile.getProfile)
 router.patch('/profile', singleUpload('profile', 'photo', { imagesOnly: true }), profile.updateProfile)
 
 router.get('/home', home.getHome)
+router.get('/all-services', home.getAllServices)
 router.get('/recent-places', home.listRecentPlaces)
 router.get('/places/search', home.searchPlaces)
 router.get('/places/reverse', home.reverseGeocode)

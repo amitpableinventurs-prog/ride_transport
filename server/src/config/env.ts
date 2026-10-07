@@ -46,6 +46,14 @@ export const env = {
   // Never enabled in production.
   otpDevEcho: !isProduction && (process.env.OTP_DEV_ECHO ?? 'true') === 'true',
   smsProvider: process.env.SMS_PROVIDER ?? 'console',
+  // Twilio (SMS_PROVIDER=twilio): the Account SID plus either the Auth Token, or an API Key SID + Secret,
+  // and a sender: a Twilio phone number (TWILIO_FROM) or a Messaging Service SID.
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID ?? '',
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN ?? '',
+  twilioApiKeySid: process.env.TWILIO_API_KEY_SID ?? '',
+  twilioApiKeySecret: process.env.TWILIO_API_KEY_SECRET ?? '',
+  twilioFrom: process.env.TWILIO_FROM ?? '',
+  twilioMessagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID ?? '',
 
   // Payments: "mock" (development) or "razorpay".
   paymentProvider: process.env.PAYMENT_PROVIDER ?? 'mock',

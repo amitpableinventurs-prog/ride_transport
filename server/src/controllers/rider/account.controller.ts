@@ -13,17 +13,21 @@ import { Driver } from '../../models/Driver'
 import { removeLiveRider } from '../../realtime/socket'
 import { rejectOffer } from '../../services/dispatch'
 import { activeVehicleFor } from '../../services/trips'
-import { isProfileComplete } from '../../utils/appUsers'
 import { findServiceArea, haversineKm, parseLatLng } from '../../utils/geo'
 import { HttpError, optionalString, parseDate, requireObjectId, requireString } from '../../utils/http'
 import { getPlatformSettings } from '../../utils/settings'
 import { uploadedFileUrl } from '../../utils/uploads'
 import { getOrCreateWallet } from '../../utils/wallet'
 
-export const REQUIRED_RIDER_DOCUMENTS = ['driving_license', 'vehicle_rc', 'vehicle_insurance', 'aadhaar'] as const
-const OPTIONAL_RIDER_DOCUMENTS = ['pan', 'pollution_certificate', 'permit', 'police_verification'] as const
-const RIDER_DOCUMENT_TYPES: readonly string[] = [...REQUIRED_RIDER_DOCUMENTS, ...OPTIONAL_RIDER_DOCUMENTS]
-const EXPIRING_DOCUMENTS: readonly string[] = ['driving_license', 'vehicle_insurance', 'pollution_certificate', 'permit']
+// A driving licence (unless the rider chose "No licence") and one of Aadhaar / PAN are needed for approval.
+export const REQUIRED_RIDER_DOCUMENTS = ['driving_license'] as const
+const IDENTITY_DOCUMENTS = ['aadhaar', 'pan'] as const
+const OPTIONAL_RIDER_DOCUMENTS = ['vehicle_rc', 'vehicle_insurance', 'pollution_certificate', 'permit', 'police_verification'] as const
+const RIDER_DOCUMENT_TYPES: readonly string[] = [...REQUIRED_RIDER_DOCUMENTS, ...IDENTITY_DOCUMENTS, ...OPTIONAL_RIDER_DOCUMENTS]
+const EXPIRING_DOCUMENTS: readonly string[] = ['vehicle_insurance', 'pollution_certificate', 'permit']
+// Two-sided documents: the licence back is mandatory ("upload the back side even if it is blank").
+const BACK_REQUIRED_DOCUMENTS: readonly string[] = ['driving_license']
+const BACK_ALLOWED_DOCUMENTS: readonly string[] = ['driving_license', 'vehicle_rc', 'aadhaar']
 
 const HEATMAP_RADIUS_KM = 10
 const HEATMAP_WINDOW_MIN = 60
@@ -37,13 +41,43 @@ function driverDoc(req: Request): DriverDoc {
 
 // ---------- Onboarding ----------
 
+const LICENSE_CHOICES = [
+  { hasLicense: true, title: 'Yes', description: 'Get Bike Taxi + Delivery Orders', modes: ['ride', 'transport'] },
+  { hasLicense: false, title: 'No', description: 'Only Delivery Orders', modes: ['transport'] },
+] as const
+
 // GET /onboarding/options: vehicle types and services to choose from, plus what was saved.
 export async function getOnboardingOptions(req: Request, res: Response) {
   const [vehicleTypes, services] = await Promise.all([
     VehicleType.find({ status: 'active' }).select('name serviceMode capacityLabel').sort({ serviceMode: 1, name: 1 }),
     ServiceCategory.find({ status: 'active' }).select('key mode name description icon vehicleType').sort({ mode: 1, sortOrder: 1 }),
   ])
-  res.json({ vehicleTypes, services, documentTypes: { required: REQUIRED_RIDER_DOCUMENTS, optional: OPTIONAL_RIDER_DOCUMENTS }, current: driverDoc(req).onboarding ?? null })
+  res.json({
+    licenseChoices: LICENSE_CHOICES,
+    vehicleTypes,
+    services,
+    documentTypes: { required: REQUIRED_RIDER_DOCUMENTS, oneOf: IDENTITY_DOCUMENTS, optional: OPTIONAL_RIDER_DOCUMENTS },
+    current: driverDoc(req).onboarding ?? null,
+  })
+}
+
+// PUT /onboarding/license { hasLicense }: the "Do you have a Driving License?" screen.
+// Without a licence the rider can only take delivery (transport) orders and skips the licence upload.
+export async function setLicenseChoice(req: Request, res: Response) {
+  const driver = driverDoc(req)
+  const hasLicense = (req.body ?? {}).hasLicense
+  if (typeof hasLicense !== 'boolean') throw new HttpError(400, 'hasLicense must be true or false')
+  if (driver.approvalStatus === 'verified') throw new HttpError(409, 'Your account is already approved')
+
+  driver.set('onboarding.hasLicense', hasLicense)
+  // Ride services need a licence: drop any that were chosen before.
+  if (!hasLicense && driver.onboarding?.services?.length) {
+    const rideKeys = (await ServiceCategory.find({ key: { $in: driver.onboarding.services }, mode: 'ride' }).select('key')).map((c) => c.key)
+    driver.set('onboarding.services', driver.onboarding.services.filter((s) => !rideKeys.includes(s)))
+  }
+  await driver.save()
+  const choice = LICENSE_CHOICES.find((c) => c.hasLicense === hasLicense)!
+  res.json({ hasLicense, modes: choice.modes, services: await ServiceCategory.find({ status: 'active', mode: { $in: choice.modes } }).select('key mode name icon').sort({ mode: 1, sortOrder: 1 }) })
 }
 
 // POST /onboarding: individual or partner-fleet rider, vehicle type and the services they will run.
@@ -63,17 +97,21 @@ export async function submitOnboarding(req: Request, res: Response) {
   const vehicleType = await VehicleType.findOne({ _id: requireObjectId(body.vehicleTypeId, 'vehicleTypeId'), status: 'active' })
   if (!vehicleType) throw new HttpError(400, 'Unknown vehicle type')
 
+  if (body.hasLicense !== undefined && typeof body.hasLicense !== 'boolean') throw new HttpError(400, 'hasLicense must be true or false')
+  const hasLicense = (body.hasLicense as boolean | undefined) ?? driver.onboarding?.hasLicense
+
   const services = Array.isArray(body.services) ? [...new Set(body.services.filter((s): s is string => typeof s === 'string'))] : []
   if (!services.length) throw new HttpError(400, 'Choose at least one service')
-  const categories = await ServiceCategory.find({ key: { $in: services }, status: 'active' }).select('key')
+  const categories = await ServiceCategory.find({ key: { $in: services }, status: 'active' }).select('key mode')
   const unknown = services.filter((s) => !categories.some((c) => c.key === s))
   if (unknown.length) throw new HttpError(400, `Unknown services: ${unknown.join(', ')}`)
+  if (hasLicense === false && categories.some((c) => c.mode === 'ride')) throw new HttpError(400, 'Without a driving licence you can only choose delivery services')
 
   if (body.serviceType !== undefined) {
     if (body.serviceType !== 'rider' && body.serviceType !== 'driver') throw new HttpError(400, 'serviceType must be rider or driver')
     driver.serviceType = body.serviceType
   }
-  driver.set('onboarding', { riderType, partner: partner?._id ?? null, vehicleType: vehicleType._id, services, completedAt: new Date() })
+  driver.set('onboarding', { riderType, partner: partner?._id ?? null, vehicleType: vehicleType._id, services, hasLicense, completedAt: new Date() })
   // A rejected rider who resubmits goes back into review.
   if (driver.approvalStatus === 'rejected') driver.approvalStatus = 'pending'
   await driver.save()
@@ -90,15 +128,35 @@ async function latestDocuments(driverId: DriverDoc['_id']) {
   return byType
 }
 
-// POST /documents (multipart: file, docType, docNumber, expiryDate)
+/** Cleans and checks the number typed on a document screen (e.g. "MP09 2023 0022590", "1234 5677 8990"). */
+function normalizeDocNumber(docType: string, raw: string): string {
+  const value = raw.toUpperCase().replace(/[\s-]/g, '')
+  const rules: Record<string, [RegExp, string]> = {
+    driving_license: [/^[A-Z]{2}\d{2}[A-Z0-9]{9,13}$/, 'Enter a valid driving licence number, e.g. KA12345677899029'],
+    aadhaar: [/^\d{12}$/, 'Aadhaar number must be 12 digits'],
+    pan: [/^[A-Z]{5}\d{4}[A-Z]$/, 'Enter a valid PAN, e.g. ABCDE1234F'],
+  }
+  const rule = rules[docType]
+  if (rule && !rule[0].test(value)) throw new HttpError(400, rule[1])
+  return value
+}
+
+// POST /documents (multipart: file, backFile, docType, docNumber, expiryDate)
 export async function uploadDocument(req: Request, res: Response) {
   const driver = driverDoc(req)
   const body = req.body as Record<string, unknown>
   const docType = requireString(body.docType, 'docType', 40)
   if (!RIDER_DOCUMENT_TYPES.includes(docType)) throw new HttpError(400, `docType must be one of: ${RIDER_DOCUMENT_TYPES.join(', ')}`)
-  if (!req.file) throw new HttpError(400, 'file is required')
+  if (docType === 'driving_license' && driver.onboarding?.hasLicense === false) throw new HttpError(409, 'You chose "No driving licence", so no licence is needed')
 
-  const docNumber = requireString(body.docNumber, 'docNumber', 40).toUpperCase()
+  const files = (req.files ?? {}) as Record<string, Express.Multer.File[] | undefined>
+  const front = files.file?.[0]
+  const back = files.backFile?.[0]
+  if (!front) throw new HttpError(400, 'file (front side) is required')
+  if (BACK_REQUIRED_DOCUMENTS.includes(docType) && !back) throw new HttpError(400, 'backFile is required: upload the back side even if it is blank')
+  if (back && !BACK_ALLOWED_DOCUMENTS.includes(docType)) throw new HttpError(400, 'This document has no back side')
+
+  const docNumber = normalizeDocNumber(docType, requireString(body.docNumber, 'docNumber', 40))
   const expiryDate = parseDate(body.expiryDate, 'expiryDate')
   if (EXPIRING_DOCUMENTS.includes(docType) && !expiryDate) throw new HttpError(400, 'expiryDate is required for this document')
   if (expiryDate && expiryDate < new Date()) throw new HttpError(400, 'This document has already expired')
@@ -107,8 +165,8 @@ export async function uploadDocument(req: Request, res: Response) {
   const doc = await DocumentRecord.findOneAndUpdate(
     { ownerType: 'driver', ownerId: driver._id, docType },
     {
-      $set: { fileUrl: uploadedFileUrl('documents', req.file), docNumber, expiryDate, status: 'pending' },
-      $unset: { rejectionReason: 1, reviewedBy: 1, reviewedAt: 1 },
+      $set: { fileUrl: uploadedFileUrl('documents', front), docNumber, expiryDate, status: 'pending', ...(back ? { backUrl: uploadedFileUrl('documents', back) } : {}) },
+      $unset: { rejectionReason: 1, reviewedBy: 1, reviewedAt: 1, ...(back ? {} : { backUrl: 1 }) },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   )
@@ -117,27 +175,94 @@ export async function uploadDocument(req: Request, res: Response) {
 
 // GET /documents
 export async function listDocuments(req: Request, res: Response) {
-  const byType = await latestDocuments(driverDoc(req)._id)
+  const driver = driverDoc(req)
+  const byType = await latestDocuments(driver._id)
+  const needsLicense = driver.onboarding?.hasLicense !== false
   res.json({
     items: [...byType.values()],
-    required: REQUIRED_RIDER_DOCUMENTS.map((type) => ({ docType: type, status: byType.get(type)?.status ?? 'missing' })),
+    required: [
+      ...(needsLicense ? REQUIRED_RIDER_DOCUMENTS : []).map((type) => ({ docType: type, status: byType.get(type)?.status ?? 'missing' })),
+      { docType: 'aadhaar_or_pan', status: bestStatus(IDENTITY_DOCUMENTS.map((t) => byType.get(t)?.status)) ?? 'missing' },
+    ],
     allowedTypes: RIDER_DOCUMENT_TYPES,
+    backSide: { required: BACK_REQUIRED_DOCUMENTS, optional: BACK_ALLOWED_DOCUMENTS.filter((t) => !BACK_REQUIRED_DOCUMENTS.includes(t)) },
+  })
+}
+
+type ChecklistStatus = 'not_submitted' | 'selected' | 'under_review' | 'verified' | 'rejected'
+
+const STATUS_RANK: Record<string, number> = { verified: 3, pending: 2, rejected: 1, expired: 1 }
+/** Best of several document statuses (the rider only needs one of Aadhaar / PAN). */
+function bestStatus(statuses: (string | undefined)[]): string | undefined {
+  return statuses.filter((s): s is string => Boolean(s)).sort((a, b) => (STATUS_RANK[b] ?? 0) - (STATUS_RANK[a] ?? 0))[0]
+}
+function checklistStatus(status: string | undefined): ChecklistStatus {
+  if (!status) return 'not_submitted'
+  if (status === 'verified') return 'verified'
+  if (status === 'pending') return 'under_review'
+  return 'rejected'
+}
+
+/** The "Documents under verification" screen: one row per onboarding step. */
+async function buildChecklist(driver: DriverDoc) {
+  const byType = await latestDocuments(driver._id)
+  const [vehicleType, vehicle] = await Promise.all([
+    driver.onboarding?.vehicleType ? VehicleType.findById(driver.onboarding.vehicleType).select('name') : null,
+    Vehicle.findOne({ ownerType: 'driver', ownerId: driver._id }).sort({ createdAt: -1 }),
+  ])
+
+  let vehicleNumberStatus: ChecklistStatus = 'not_submitted'
+  if (vehicle) vehicleNumberStatus = vehicle.status === 'active' ? 'verified' : vehicle.status === 'blocked' || vehicle.documentsStatus === 'rejected' ? 'rejected' : 'under_review'
+
+  const reasonFor = (types: readonly string[]) => {
+    const d = types.map((t) => byType.get(t)).find((x) => x && (x.status === 'rejected' || x.status === 'expired'))
+    return d ? (d.status === 'expired' ? 'Document expired' : d.rejectionReason || 'Rejected') : undefined
+  }
+  const identityStatus = checklistStatus(bestStatus(IDENTITY_DOCUMENTS.map((t) => byType.get(t)?.status)))
+
+  const photoNameDone = Boolean(driver.name && driver.photoUrl && driver.gender && driver.dateOfBirth)
+  const items = [
+    { key: 'vehicle', title: vehicleType ? `Vehicle - ${vehicleType.name}` : 'Vehicle', status: (vehicleType ? 'selected' : 'not_submitted') as ChecklistStatus },
+    ...(driver.onboarding?.hasLicense === false
+      ? []
+      : [{ key: 'driving_license', title: 'Driving License', status: checklistStatus(byType.get('driving_license')?.status), reason: reasonFor(['driving_license']) }]),
+    { key: 'photo_name', title: 'Photo and name', status: (photoNameDone ? 'verified' : 'not_submitted') as ChecklistStatus },
+    { key: 'vehicle_number', title: 'Vehicle Number', status: vehicleNumberStatus },
+    { key: 'identity', title: 'Aadhaar or PAN card', status: identityStatus, reason: identityStatus === 'rejected' ? reasonFor(IDENTITY_DOCUMENTS) : undefined },
+  ]
+  return { items, photoNameDone, byType }
+}
+
+// GET /onboarding/status: checklist for the "Documents under verification" screen.
+export async function getOnboardingStatus(req: Request, res: Response) {
+  const driver = driverDoc(req)
+  const { items } = await buildChecklist(driver)
+  const incomplete = items.some((i) => i.status === 'not_submitted' || i.status === 'rejected')
+
+  const overall = driver.approvalStatus === 'verified' ? 'approved' : driver.approvalStatus === 'rejected' ? 'rejected' : incomplete ? 'pending' : 'under_review'
+  const next = items.find((i) => i.status === 'not_submitted' || i.status === 'rejected')
+  res.json({
+    status: overall,
+    title: overall === 'approved' ? 'You are approved' : overall === 'rejected' ? 'Verification failed' : incomplete ? 'Complete your documents' : 'Documents under verification',
+    message: overall === 'under_review' ? 'This may take up to 24 hours. Please wait!' : driver.rejectionReason || null,
+    items,
+    nextStep: overall === 'approved' || overall === 'under_review' ? null : (next?.key ?? null),
+    hasLicense: driver.onboarding?.hasLicense ?? null,
   })
 }
 
 // GET /approval-status
 export async function getApprovalStatus(req: Request, res: Response) {
   const driver = driverDoc(req)
-  const byType = await latestDocuments(driver._id)
-  const missingDocuments = REQUIRED_RIDER_DOCUMENTS.filter((t) => !byType.has(t))
+  const { items, photoNameDone, byType } = await buildChecklist(driver)
   const rejectedDocuments = [...byType.values()].filter((d) => d.status === 'rejected' || d.status === 'expired')
+  const missing = items.filter((i) => i.status === 'not_submitted').map((i) => i.key)
   const onboardingComplete = Boolean(driver.onboarding?.completedAt)
-  const profileComplete = isProfileComplete(req.appUser!)
 
   let status: 'pending' | 'under_review' | 'approved' | 'rejected'
   if (driver.approvalStatus === 'verified') status = 'approved'
   else if (driver.approvalStatus === 'rejected') status = 'rejected'
-  else if (!profileComplete || !onboardingComplete || missingDocuments.length || rejectedDocuments.length) status = 'pending'
+  else if (!onboardingComplete || missing.length || rejectedDocuments.length || items.some((i) => i.status === 'rejected')) status = 'pending'
   else status = 'under_review'
 
   const reasons = [
@@ -147,7 +272,7 @@ export async function getApprovalStatus(req: Request, res: Response) {
   res.json({
     status,
     reasons,
-    steps: { profileComplete, onboardingComplete, missingDocuments, documentsToReupload: rejectedDocuments.map((d) => d.docType) },
+    steps: { profileComplete: photoNameDone, onboardingComplete, missingDocuments: missing, documentsToReupload: rejectedDocuments.map((d) => d.docType) },
   })
 }
 
@@ -163,36 +288,66 @@ export async function getVehicle(req: Request, res: Response) {
   res.json({ current: current ? await current.populate('vehicleType', 'name capacityLabel') : null, requests })
 }
 
-// POST /vehicle: register a vehicle (or request a change); it goes live after admin verification.
+// POST /vehicle (JSON or multipart with rcFront, rcBack): the "Vehicle Number" screen.
+// Only registrationNumber is needed once onboarding picked the vehicle type and services. Before approval,
+// sending it again corrects the pending request. After approval it files a change request.
 export async function requestVehicle(req: Request, res: Response) {
   const driver = driverDoc(req)
   const body = req.body as Record<string, unknown>
-  const vehicleType = await VehicleType.findOne({ _id: requireObjectId(body.vehicleTypeId, 'vehicleTypeId'), status: 'active' })
+  const vehicleTypeId = body.vehicleTypeId ?? driver.onboarding?.vehicleType
+  if (!vehicleTypeId) throw new HttpError(400, 'Choose your vehicle type first (POST /onboarding) or send vehicleTypeId')
+  const vehicleType = await VehicleType.findOne({ _id: requireObjectId(String(vehicleTypeId), 'vehicleTypeId'), status: 'active' })
   if (!vehicleType) throw new HttpError(400, 'Unknown vehicle type')
-  const category = await ServiceCategory.findOne({ key: requireString(body.categoryKey, 'categoryKey', 60), status: 'active' })
+
+  // Category: the one sent, else the chosen service that uses this vehicle type, else any chosen service of the same mode.
+  let category = null
+  if (body.categoryKey !== undefined) {
+    category = await ServiceCategory.findOne({ key: requireString(body.categoryKey, 'categoryKey', 60), status: 'active' })
+  } else {
+    const chosen = await ServiceCategory.find({ key: { $in: driver.onboarding?.services ?? [] }, status: 'active', mode: vehicleType.serviceMode }).sort({ sortOrder: 1 })
+    category = chosen.find((c) => c.vehicleType?.equals(vehicleType._id)) ?? chosen[0] ?? null
+  }
   if (!category || category.mode !== vehicleType.serviceMode) throw new HttpError(400, `categoryKey must be an active ${vehicleType.serviceMode} category`)
 
-  const registrationNumber = requireString(body.registrationNumber, 'registrationNumber', 20).toUpperCase().replace(/\s+/g, '')
-  if (!/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4}$/.test(registrationNumber.replace(/-/g, ''))) throw new HttpError(400, 'Enter a valid registration number, e.g. MH12AB1234')
-  if (await Vehicle.exists({ ownerType: 'driver', ownerId: driver._id, status: 'inactive' })) {
-    throw new HttpError(409, 'You already have a vehicle request under review')
-  }
+  const registrationNumber = requireString(body.registrationNumber, 'registrationNumber', 20).toUpperCase().replace(/[\s-]+/g, '')
+  if (!/^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4}$/.test(registrationNumber)) throw new HttpError(400, 'Enter a valid registration number, e.g. MH12AB1234')
 
-  const vehicle = await Vehicle.create({
+  const files = (req.files ?? {}) as Record<string, Express.Multer.File[] | undefined>
+  const rcFront = files.rcFront?.[0]
+  const rcBack = files.rcBack?.[0]
+  if (rcBack && !rcFront) throw new HttpError(400, 'rcFront is required when rcBack is sent')
+
+  const pending = await Vehicle.findOne({ ownerType: 'driver', ownerId: driver._id, status: 'inactive' })
+  if (pending && driver.approvalStatus === 'verified') throw new HttpError(409, 'You already have a vehicle request under review')
+  const taken = await Vehicle.findOne({ registrationNumber, ...(pending ? { _id: { $ne: pending._id } } : {}) }).select('_id')
+  if (taken) throw new HttpError(409, 'This vehicle number is already registered')
+
+  const fields = {
     registrationNumber,
-    model: requireString(body.model, 'model', 60),
+    model: optionalString(body.model, 60) ?? vehicleType.name,
     manufacturer: optionalString(body.manufacturer, 60),
     vehicleType: vehicleType._id,
     serviceMode: vehicleType.serviceMode,
     categoryKey: category.key,
-    ownerType: 'driver',
-    ownerId: driver._id,
-    ownerModel: 'Driver',
     capacity: vehicleType.capacityLabel,
-    status: 'inactive',
-    documentsStatus: 'pending',
-  })
-  res.status(201).json(vehicle)
+    status: 'inactive' as const,
+    documentsStatus: 'pending' as const,
+  }
+  const vehicle = pending
+    ? await Vehicle.findByIdAndUpdate(pending._id, { $set: fields }, { new: true })
+    : await Vehicle.create({ ...fields, ownerType: 'driver', ownerId: driver._id, ownerModel: 'Driver' })
+
+  if (rcFront) {
+    await DocumentRecord.findOneAndUpdate(
+      { ownerType: 'driver', ownerId: driver._id, docType: 'vehicle_rc' },
+      {
+        $set: { fileUrl: uploadedFileUrl('documents', rcFront), docNumber: registrationNumber, status: 'pending', ...(rcBack ? { backUrl: uploadedFileUrl('documents', rcBack) } : {}) },
+        $unset: { rejectionReason: 1, reviewedBy: 1, reviewedAt: 1, ...(rcBack ? {} : { backUrl: 1 }) },
+      },
+      { upsert: true, setDefaultsOnInsert: true },
+    )
+  }
+  res.status(pending ? 200 : 201).json(vehicle)
 }
 
 // ---------- Duty ----------

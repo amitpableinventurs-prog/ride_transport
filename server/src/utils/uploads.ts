@@ -28,17 +28,26 @@ function storage(folder: UploadFolder) {
   })
 }
 
+function imageFilter(imagesOnly: boolean): multer.Options['fileFilter'] {
+  return (_req, file, cb) => {
+    const allowed = ALLOWED_TYPES[file.mimetype] && !(imagesOnly && file.mimetype === 'application/pdf')
+    if (allowed) cb(null, true)
+    else cb(new HttpError(400, imagesOnly ? `${file.fieldname} must be a JPEG, PNG or WebP image` : `${file.fieldname} must be a JPEG, PNG, WebP or PDF file`))
+  }
+}
+
 /** Multipart middleware accepting one optional file in `field` (JPEG, PNG, WebP or PDF up to 5 MB). */
 export function singleUpload(folder: UploadFolder, field: string, { imagesOnly = false } = {}) {
+  return multer({ storage: storage(folder), limits: { fileSize: MAX_FILE_BYTES, files: 1 }, fileFilter: imageFilter(imagesOnly) }).single(field)
+}
+
+/** Multipart middleware accepting one optional file in each of `fields` (same type and size rules). */
+export function multiUpload(folder: UploadFolder, fields: string[], { imagesOnly = false } = {}) {
   return multer({
     storage: storage(folder),
-    limits: { fileSize: MAX_FILE_BYTES, files: 1 },
-    fileFilter: (_req, file, cb) => {
-      const allowed = ALLOWED_TYPES[file.mimetype] && !(imagesOnly && file.mimetype === 'application/pdf')
-      if (allowed) cb(null, true)
-      else cb(new HttpError(400, imagesOnly ? `${field} must be a JPEG, PNG or WebP image` : `${field} must be a JPEG, PNG, WebP or PDF file`))
-    },
-  }).single(field)
+    limits: { fileSize: MAX_FILE_BYTES, files: fields.length },
+    fileFilter: imageFilter(imagesOnly),
+  }).fields(fields.map((name) => ({ name, maxCount: 1 })))
 }
 
 /** Public URL path of an uploaded file. */

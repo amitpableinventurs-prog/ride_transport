@@ -64,7 +64,8 @@ export async function listAvailableDrivers(req: Request, res: Response) {
   const { mode } = req.query as { mode?: string; categoryKey?: string }
 
   const filter: FilterQuery<DriverDocument> = { status: 'active', onlineStatus: 'online' }
-  if (mode === 'ride') filter.serviceType = { $in: ['rider', 'driver'] }
+  if (mode === 'ride') filter.serviceType = 'rider'
+  if (mode === 'transport') filter.serviceType = 'transport'
 
   const drivers = await Driver.find(filter).select('name phone serviceType onlineStatus currentLocation rating').sort({ name: 1 })
   res.json(drivers)

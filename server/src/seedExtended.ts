@@ -46,6 +46,13 @@ export async function seedExtended() {
     { name: 'Mini Truck', serviceMode: 'transport', capacityLabel: '16-22 ft' },
     { name: 'Tempo', serviceMode: 'transport', capacityLabel: '16-22 ft' },
     { name: 'Truck', serviceMode: 'transport', capacityLabel: '24-40+ ft' },
+    // One type per service category, so a category and its vehicle type share a name.
+    { name: 'Cab economy', serviceMode: 'ride', capacityLabel: '4 seats' },
+    { name: 'Cab Premium', serviceMode: 'ride', capacityLabel: '4 seats' },
+    { name: 'Bike Lite', serviceMode: 'ride', capacityLabel: '1 seat' },
+    { name: 'Rental Cars', serviceMode: 'ride', capacityLabel: '4 seats' },
+    { name: 'Bike Porter', serviceMode: 'transport', capacityLabel: 'Parcels' },
+    { name: 'Small Vehicles', serviceMode: 'transport', capacityLabel: '6-14 ft' },
   ] as const
   const vehicleTypes = new Map<string, any>()
   for (const vt of vehicleTypeDefs) {
@@ -56,13 +63,13 @@ export async function seedExtended() {
   // ---------- Service Categories ----------
   const categoryDefs = [
     { mode: 'ride', key: 'auto', name: 'Auto', description: 'Budget-friendly 3-seater', seats: 3, capacityLabel: undefined, icon: 'car-taxi-front', vehicleType: 'Auto', sortOrder: 1 },
-    { mode: 'ride', key: 'cab_economy', name: 'Cab Economy', description: 'Affordable AC cabs', seats: 4, capacityLabel: undefined, icon: 'car', vehicleType: 'Cab', sortOrder: 2 },
-    { mode: 'ride', key: 'cab_premium', name: 'Cab Premium', description: 'Premium comfort rides', seats: 4, capacityLabel: undefined, icon: 'car-front', vehicleType: 'Cab', sortOrder: 3 },
+    { mode: 'ride', key: 'cab_economy', name: 'Cab Economy', description: 'Affordable AC cabs', seats: 4, capacityLabel: undefined, icon: 'car', vehicleType: 'Cab economy', sortOrder: 2 },
+    { mode: 'ride', key: 'cab_premium', name: 'Cab Premium', description: 'Premium comfort rides', seats: 4, capacityLabel: undefined, icon: 'car-front', vehicleType: 'Cab Premium', sortOrder: 3 },
     { mode: 'ride', key: 'bike', name: 'Bike', description: 'Fastest for solo trips', seats: 1, capacityLabel: undefined, icon: 'bike', vehicleType: 'Bike', sortOrder: 4 },
-    { mode: 'ride', key: 'bike_lite', name: 'Bike Lite', description: 'Low-cost solo rides', seats: 1, capacityLabel: undefined, icon: 'bike', vehicleType: 'Scooter', sortOrder: 5 },
-    { mode: 'ride', key: 'rental_cars', name: 'Rental Cars', description: 'Hourly car rentals with driver', seats: 4, capacityLabel: undefined, icon: 'car', vehicleType: 'Cab', sortOrder: 6 },
-    { mode: 'transport', key: 'bike_porter', name: 'Bike Porter', description: 'Parcels, fastest delivery', seats: undefined, capacityLabel: 'Parcels', icon: 'package', vehicleType: 'Scooter', sortOrder: 1 },
-    { mode: 'transport', key: 'small_vehicle', name: 'Small Vehicles', description: '6-14 ft', seats: undefined, capacityLabel: '6-14 ft', icon: 'truck', vehicleType: 'Pickup', sortOrder: 2 },
+    { mode: 'ride', key: 'bike_lite', name: 'Bike Lite', description: 'Low-cost solo rides', seats: 1, capacityLabel: undefined, icon: 'bike', vehicleType: 'Bike Lite', sortOrder: 5 },
+    { mode: 'ride', key: 'rental_cars', name: 'Rental Cars', description: 'Hourly car rentals with driver', seats: 4, capacityLabel: undefined, icon: 'car', vehicleType: 'Rental Cars', sortOrder: 6 },
+    { mode: 'transport', key: 'bike_porter', name: 'Bike Porter', description: 'Parcels, fastest delivery', seats: undefined, capacityLabel: 'Parcels', icon: 'package', vehicleType: 'Bike Porter', sortOrder: 1 },
+    { mode: 'transport', key: 'small_vehicle', name: 'Small Vehicles', description: '6-14 ft', seats: undefined, capacityLabel: '6-14 ft', icon: 'truck', vehicleType: 'Small Vehicles', sortOrder: 2 },
     { mode: 'transport', key: 'medium_vehicle', name: 'Medium Vehicles', description: '16-22 ft', seats: undefined, capacityLabel: '16-22 ft', icon: 'truck', vehicleType: 'Mini Truck', sortOrder: 3 },
     { mode: 'transport', key: 'large_vehicle', name: 'Large Vehicles', description: '24-40+ ft', seats: undefined, capacityLabel: '24-40+ ft', icon: 'truck', vehicleType: 'Truck', sortOrder: 4 },
   ] as const
@@ -116,15 +123,15 @@ export async function seedExtended() {
 
   // ---------- Drivers (Riders + Drivers) ----------
   const driverNames = [
-    { name: 'Suresh Kumar', serviceType: 'driver' as const },
+    { name: 'Suresh Kumar', serviceType: 'transport' as const },
     { name: 'Manoj Tiwari', serviceType: 'rider' as const },
-    { name: 'Ramesh Yadav', serviceType: 'driver' as const },
+    { name: 'Ramesh Yadav', serviceType: 'transport' as const },
     { name: 'Ajay Chauhan', serviceType: 'rider' as const },
-    { name: 'Vikas Sharma', serviceType: 'driver' as const },
+    { name: 'Vikas Sharma', serviceType: 'transport' as const },
     { name: 'Deepak Verma', serviceType: 'rider' as const },
-    { name: 'Sanjay Rathore', serviceType: 'driver' as const },
+    { name: 'Sanjay Rathore', serviceType: 'transport' as const },
     { name: 'Naveen Kumar', serviceType: 'rider' as const },
-    { name: 'Prakash Jha', serviceType: 'driver' as const },
+    { name: 'Prakash Jha', serviceType: 'transport' as const },
     { name: 'Rakesh Meena', serviceType: 'rider' as const },
   ]
   const drivers: any[] = []
@@ -188,25 +195,25 @@ export async function seedExtended() {
 
   // ---------- Vehicles ----------
   const vehicles: any[] = []
-  const rideDrivers = drivers.filter((d) => d!.serviceType === 'driver' || d!.serviceType === 'rider')
+  const rideDrivers = drivers.filter((d) => d!.serviceType === 'transport' || d!.serviceType === 'rider')
   for (let i = 0; i < rideDrivers.length; i++) {
     const d = rideDrivers[i]!
-    const category = d.serviceType === 'rider' ? categoryDefs[3] : categoryDefs[1]
+    const category = d.serviceType === 'rider' ? categoryDefs[3] : categoryDefs[7]
     const vt = vehicleTypes.get(category.vehicleType)!
     vehicles.push(
       await Vehicle.findOneAndUpdate(
         { registrationNumber: `MH-${(i % 4) + 1}-AB-${1000 + i}` },
         {
           registrationNumber: `MH-${(i % 4) + 1}-AB-${1000 + i}`,
-          model: d.serviceType === 'rider' ? 'Honda Activa' : 'Maruti Dzire',
-          manufacturer: d.serviceType === 'rider' ? 'Honda' : 'Maruti Suzuki',
+          model: d.serviceType === 'rider' ? 'Honda Activa' : 'Tata Ace',
+          manufacturer: d.serviceType === 'rider' ? 'Honda' : 'Tata Motors',
           vehicleType: vt._id,
-          serviceMode: 'ride',
+          serviceMode: category.mode,
           categoryKey: category.key,
           ownerType: 'driver',
           ownerId: d._id,
           ownerModel: 'Driver',
-          capacity: category.seats ? `${category.seats} seats` : undefined,
+          capacity: category.seats ? `${category.seats} seats` : category.capacityLabel,
           status: 'active',
           documentsStatus: i % 5 === 0 ? 'pending' : 'verified',
         },
@@ -216,7 +223,7 @@ export async function seedExtended() {
   }
   for (let i = 0; i < partners.length; i++) {
     const p = partners[i]!
-    const category = categoryDefs[5 + (i % 3)]
+    const category = categoryDefs[7 + (i % 3)]
     const vt = vehicleTypes.get(category.vehicleType)!
     vehicles.push(
       await Vehicle.findOneAndUpdate(

@@ -83,7 +83,7 @@ export function RiderReportPage() {
               <tr key={r.driverName + r.serviceType} className="border-b border-navy-50 last:border-0">
                 <td className="px-5 py-3 font-medium text-navy-700">{r.driverName}</td>
                 <td className="px-5 py-3">
-                  <Badge tone={r.serviceType === 'driver' ? 'info' : 'neutral'}>{r.serviceType}</Badge>
+                  <Badge tone={r.serviceType === 'transport' ? 'info' : 'neutral'}>{r.serviceType}</Badge>
                 </td>
                 <td className="px-5 py-3 text-right text-navy-600">{r.totalTrips}</td>
                 <td className="px-5 py-3 text-right text-brand-green-dark">{r.completedInRange}</td>

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Pencil, Plus } from 'lucide-react'
-import { createVehicleType, fetchVehicleTypes, updateVehicleType } from '@/api/vehicleTypes'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { createVehicleType, deleteVehicleType, fetchVehicleTypes, updateVehicleType } from '@/api/vehicleTypes'
 import type { ServiceMode, VehicleType } from '@/types/entities'
 import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
@@ -29,6 +29,22 @@ export function VehicleTypesPage() {
       setVehicleTypes((prev) => prev!.map((v) => (v.id === vt.id ? updated : v)))
     } catch (err) {
       setError((err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Action failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function remove(vt: VehicleType) {
+    if (!window.confirm(`Delete vehicle type "${vt.name}"? This cannot be undone.`)) return
+    setBusyId(vt.id)
+    setError(null)
+    try {
+      await deleteVehicleType(vt.id)
+      setVehicleTypes((prev) => prev!.filter((v) => v.id !== vt.id))
+    } catch (err) {
+      const message = (err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Could not delete vehicle type'
+      setError(message)
+      window.alert(message)
     } finally {
       setBusyId(null)
     }
@@ -100,6 +116,13 @@ export function VehicleTypesPage() {
                         className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-600 hover:bg-navy-50 disabled:opacity-50"
                       >
                         {vt.status === 'active' ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button
+                        onClick={() => remove(vt)}
+                        disabled={busyId === vt.id}
+                        className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-brand-red hover:bg-red-50 disabled:opacity-50"
+                      >
+                        <Trash2 size={13} /> Delete
                       </button>
                     </div>
                   </PermissionGate>

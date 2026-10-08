@@ -50,7 +50,7 @@ export function DashboardPage() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard label="Customers" value={compact.format(stats.totals.customers)} icon={Users} accent="navy" />
         <StatCard label="Riders" value={compact.format(stats.totals.riders)} icon={Bike} accent="orange" />
-        <StatCard label="Drivers" value={compact.format(stats.totals.drivers)} icon={CarFront} accent="orange" />
+        <StatCard label="Transport Riders" value={compact.format(stats.totals.drivers)} icon={CarFront} accent="orange" />
         <StatCard label="Transport Partners" value={compact.format(stats.totals.transportPartners)} icon={Building2} accent="green" />
         <StatCard label="Vehicles" value={compact.format(stats.totals.vehicles)} icon={CarFront} accent="navy" />
       </div>

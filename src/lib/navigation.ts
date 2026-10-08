@@ -95,7 +95,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: 'Customers', path: '/users/customers', icon: Users, permission: 'users.view' },
       { label: 'Riders', path: '/users/riders', icon: Bike, permission: 'users.view' },
-      { label: 'Drivers', path: '/users/drivers', icon: UserCog, permission: 'users.view' },
+      { label: 'Transport Riders', path: '/users/drivers', icon: UserCog, permission: 'users.view' },
       { label: 'Transport Partners', path: '/users/partners', icon: Building2, permission: 'users.view' },
     ],
   },

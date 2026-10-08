@@ -108,7 +108,7 @@ export async function submitOnboarding(req: Request, res: Response) {
   if (hasLicense === false && categories.some((c) => c.mode === 'ride')) throw new HttpError(400, 'Without a driving licence you can only choose delivery services')
 
   if (body.serviceType !== undefined) {
-    if (body.serviceType !== 'rider' && body.serviceType !== 'driver') throw new HttpError(400, 'serviceType must be rider or driver')
+    if (body.serviceType !== 'rider' && body.serviceType !== 'transport') throw new HttpError(400, 'serviceType must be rider or transport')
     driver.serviceType = body.serviceType
   }
   driver.set('onboarding', { riderType, partner: partner?._id ?? null, vehicleType: vehicleType._id, services, hasLicense, completedAt: new Date() })

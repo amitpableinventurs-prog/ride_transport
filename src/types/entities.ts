@@ -20,7 +20,7 @@ export interface Customer {
   updatedAt: string
 }
 
-export type ServiceType = 'rider' | 'driver'
+export type ServiceType = 'rider' | 'transport'
 export type OnlineStatus = 'offline' | 'online' | 'busy' | 'on_trip'
 
 export interface Driver {

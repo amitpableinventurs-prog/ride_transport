@@ -129,7 +129,7 @@ export interface AvailableDriver {
   id: string
   name: string
   phone: string
-  serviceType: 'rider' | 'driver'
+  serviceType: 'rider' | 'transport'
   onlineStatus: string
   currentLocation?: { lat?: number; lng?: number; updatedAt?: string }
   rating?: number

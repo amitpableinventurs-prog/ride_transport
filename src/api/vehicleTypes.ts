@@ -28,3 +28,7 @@ export async function updateVehicleType(
   const { data } = await apiClient.patch<VehicleType>(`/fleet/vehicle-types/${id}`, patch)
   return data
 }
+
+export async function deleteVehicleType(id: string): Promise<void> {
+  await apiClient.delete(`/fleet/vehicle-types/${id}`)
+}

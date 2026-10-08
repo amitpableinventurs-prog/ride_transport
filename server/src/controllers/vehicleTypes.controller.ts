@@ -1,5 +1,8 @@
 import type { Request, Response } from 'express'
 import { VehicleType } from '../models/VehicleType'
+import { Vehicle } from '../models/Vehicle'
+import { Driver } from '../models/Driver'
+import { ServiceCategory } from '../models/ServiceCategory'
 import { recordAudit } from '../utils/audit'
 
 function parsePagination(req: Request) {
@@ -76,4 +79,34 @@ export async function updateVehicleType(req: Request, res: Response) {
   )
 
   res.json(vehicleType)
+}
+
+// A type that vehicles, riders or service categories still point at cannot be removed; deactivate it instead.
+export async function deleteVehicleType(req: Request, res: Response) {
+  const vehicleType = await VehicleType.findById(req.params.id)
+  if (!vehicleType) {
+    res.status(404).json({ message: 'Vehicle type not found' })
+    return
+  }
+
+  const [vehicles, riders, categories] = await Promise.all([
+    Vehicle.countDocuments({ vehicleType: vehicleType._id }),
+    Driver.countDocuments({ 'onboarding.vehicleType': vehicleType._id }),
+    ServiceCategory.countDocuments({ vehicleType: vehicleType._id }),
+  ])
+  const used = [
+    vehicles && `${vehicles} vehicle${vehicles > 1 ? 's' : ''}`,
+    riders && `${riders} rider${riders > 1 ? 's' : ''}/driver${riders > 1 ? 's' : ''}`,
+    categories && `${categories} service categor${categories > 1 ? 'ies' : 'y'}`,
+  ].filter(Boolean)
+  if (used.length) {
+    res.status(409).json({
+      message: `Cannot delete "${vehicleType.name}": it is used by ${used.join(', ')}. Move them to another vehicle type first${vehicleType.status === 'active' ? ', or deactivate it' : ''}.`,
+    })
+    return
+  }
+
+  await vehicleType.deleteOne()
+  await recordAudit(req.admin!, 'vehicle_type.deleted', 'VehicleType', vehicleType.name)
+  res.json({ message: 'Vehicle type deleted' })
 }

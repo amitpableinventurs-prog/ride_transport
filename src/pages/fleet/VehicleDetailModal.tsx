@@ -1,7 +1,8 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { CheckCircle2, Pencil, XCircle } from 'lucide-react'
 import { updateVehicle } from '@/api/vehicles'
-import type { DocumentRecord, Vehicle } from '@/types/entities'
+import { fetchVehicleTypes } from '@/api/vehicleTypes'
+import type { DocumentRecord, Vehicle, VehicleType } from '@/types/entities'
 import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
 import { PermissionGate } from '@/components/common/PermissionGate'
@@ -28,6 +29,13 @@ export function VehicleDetailModal({
   const [model, setModel] = useState(vehicle.model)
   const [manufacturer, setManufacturer] = useState(vehicle.manufacturer ?? '')
   const [capacity, setCapacity] = useState(vehicle.capacity ?? '')
+  const currentTypeId = typeof vehicle.vehicleType === 'string' ? vehicle.vehicleType : vehicle.vehicleType.id
+  const [typeId, setTypeId] = useState(currentTypeId)
+  const [types, setTypes] = useState<VehicleType[]>([])
+
+  useEffect(() => {
+    if (editing && types.length === 0) fetchVehicleTypes({ limit: 100 }).then((r) => setTypes(r.items)).catch(() => setError('Could not load vehicle types'))
+  }, [editing, types.length])
 
   // The rider app files a driver's RC under the driver, so look there as well as under the vehicle itself.
   const sources: DocumentSource[] = [{ ownerType: 'vehicle', ownerId: vehicle.id }]
@@ -42,7 +50,8 @@ export function VehicleDetailModal({
     try {
       const updated = await updateVehicle(vehicle.id, patch)
       // The update response is the raw vehicle, so keep the display-only fields from the list row.
-      onUpdated({ ...vehicle, ...updated, vehicleType: vehicle.vehicleType, ownerLabel: vehicle.ownerLabel, assignedDriver: vehicle.assignedDriver })
+      const newType = types.find((t) => t.id === updated.vehicleType) ?? vehicle.vehicleType
+      onUpdated({ ...vehicle, ...updated, vehicleType: newType, ownerLabel: vehicle.ownerLabel, assignedDriver: vehicle.assignedDriver })
       after?.()
     } catch (err) {
       setError((err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Action failed')
@@ -53,7 +62,7 @@ export function VehicleDetailModal({
 
   function submitEdit(e: FormEvent) {
     e.preventDefault()
-    save({ model, manufacturer, capacity }, () => setEditing(false))
+    save({ model, manufacturer, capacity, ...(typeId !== currentTypeId ? { vehicleType: typeId } : {}) }, () => setEditing(false))
   }
 
   return (
@@ -80,6 +89,16 @@ export function VehicleDetailModal({
               </Field>
               <Field label="Manufacturer">
                 <input value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} className={INPUT} />
+              </Field>
+              <Field label="Vehicle type">
+                <select value={typeId} onChange={(e) => setTypeId(e.target.value)} className={INPUT}>
+                  {types.length === 0 && <option value={typeId}>{vehicleType}</option>}
+                  {types.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.serviceMode}){t.status === 'inactive' ? ' - inactive' : ''}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <Field label="Capacity">
                 <input value={capacity} onChange={(e) => setCapacity(e.target.value)} className={INPUT} />

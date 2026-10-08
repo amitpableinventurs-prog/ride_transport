@@ -24,7 +24,7 @@ export function DriverDetailModal({
   onUpdated,
 }: {
   driver: Driver
-  label: 'Rider' | 'Driver'
+  label: 'Rider' | 'Transport rider'
   onClose: () => void
   onUpdated: (driver: Driver) => void
 }) {

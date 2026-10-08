@@ -180,8 +180,8 @@ export async function register(req: Request, res: Response) {
       user = { type: 'customer', doc }
     } else {
       const serviceType = body.serviceType
-      if (serviceType !== 'rider' && serviceType !== 'driver') {
-        res.status(400).json({ message: 'serviceType (rider or driver) is required' })
+      if (serviceType !== 'rider' && serviceType !== 'transport') {
+        res.status(400).json({ message: 'serviceType (rider or transport) is required' })
         return
       }
       // New riders/drivers start as approvalStatus "pending" until an admin verifies their documents.

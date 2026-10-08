@@ -28,3 +28,8 @@ export async function updateDriver(
   const { data } = await apiClient.patch<Driver>(`/users/drivers/${id}`, patch)
   return data
 }
+
+/** Deletes the account with its vehicles, documents and wallet; past trips are kept. */
+export async function deleteDriver(id: string): Promise<void> {
+  await apiClient.delete(`/users/drivers/${id}`)
+}

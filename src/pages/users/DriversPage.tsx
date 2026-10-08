@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Eye, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
-import { fetchDrivers, updateDriver } from '@/api/drivers'
+import { CheckCircle2, Eye, Trash2, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
+import { deleteDriver, fetchDrivers, updateDriver } from '@/api/drivers'
 import type { ApprovalStatus, Driver, OnlineStatus, UserStatus } from '@/types/entities'
 import { DriverDetailModal } from './DriverDetailModal'
 import { IconButton } from '@/components/common/IconButton'
@@ -40,7 +40,7 @@ export function DriversPage() {
   const [viewing, setViewing] = useState<Driver | null>(null)
 
   async function load() {
-    const data = await fetchDrivers({ page, limit: LIMIT, q: q || undefined, serviceType: 'driver' })
+    const data = await fetchDrivers({ page, limit: LIMIT, q: q || undefined, serviceType: 'transport' })
     setDrivers(data.items)
     setTotal(data.total)
   }
@@ -65,13 +65,34 @@ export function DriversPage() {
     }
   }
 
+  async function remove(driver: Driver) {
+    const who = driver.name || driver.phone
+    const ok = window.confirm(
+      `Delete ${who}?\n\nThis permanently removes the account with its vehicles, documents and wallet. Past trips stay in the bookings history. This cannot be undone.`,
+    )
+    if (!ok) return
+    setBusyId(driver.id)
+    setError(null)
+    try {
+      await deleteDriver(driver.id)
+      setDrivers((prev) => prev!.filter((d) => d.id !== driver.id))
+      setTotal((t) => Math.max(0, t - 1))
+    } catch (err) {
+      const message = (err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Could not delete driver'
+      setError(message)
+      window.alert(message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / LIMIT))
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold text-navy-800">Drivers</h1>
-        <p className="text-sm text-navy-400">Cab drivers offering ride services.</p>
+        <h1 className="text-xl font-semibold text-navy-800">Transport Riders</h1>
+        <p className="text-sm text-navy-400">Riders doing goods delivery (Bike Porter, Small Vehicles).</p>
       </div>
 
       <div className="relative w-72">
@@ -97,7 +118,7 @@ export function DriversPage() {
             <table className="w-full min-w-[960px] text-left text-sm">
               <thead>
                 <tr className="border-b border-navy-100 bg-navy-50/50 text-xs uppercase tracking-wide text-navy-400">
-                  <th className="px-5 py-3 font-medium">Driver</th>
+                  <th className="px-5 py-3 font-medium">Rider</th>
                   <th className="px-5 py-3 font-medium">Phone</th>
                   <th className="px-5 py-3 font-medium">Vehicle</th>
                   <th className="px-5 py-3 font-medium">Approval</th>
@@ -113,7 +134,7 @@ export function DriversPage() {
                 {drivers.length === 0 && (
                   <tr>
                     <td colSpan={10} className="px-5 py-8 text-center text-navy-300">
-                      No drivers found.
+                      No transport riders found.
                     </td>
                   </tr>
                 )}
@@ -164,6 +185,7 @@ export function DriversPage() {
                             disabled={busyId === driver.id}
                             onClick={() => apply(driver, { status: driver.status === 'active' ? 'suspended' : 'active' })}
                           />
+                          <IconButton label="Delete" tone="danger" icon={Trash2} disabled={busyId === driver.id} onClick={() => remove(driver)} />
                         </PermissionGate>
                       </div>
                     </td>
@@ -200,7 +222,7 @@ export function DriversPage() {
       {viewing && (
         <DriverDetailModal
           driver={viewing}
-          label="Driver"
+          label="Transport rider"
           onClose={() => setViewing(null)}
           onUpdated={(updated) => {
             setViewing(updated)

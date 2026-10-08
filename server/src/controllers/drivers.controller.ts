@@ -1,5 +1,11 @@
 import type { Request, Response } from 'express'
 import { Driver } from '../models/Driver'
+import { ACTIVE_TRIP_STATUSES, Booking } from '../models/Booking'
+import { DocumentRecord } from '../models/Document'
+import { OtpCode } from '../models/OtpCode'
+import { Vehicle } from '../models/Vehicle'
+import { Wallet } from '../models/Wallet'
+import { WalletTransaction } from '../models/WalletTransaction'
 import { recordAudit } from '../utils/audit'
 import { searchRegex } from '../utils/regex'
 
@@ -11,7 +17,7 @@ function parsePagination(req: Request) {
 
 
 // Backs both the "Riders" and "Drivers" nav pages (SRS section 9) — a single
-// Driver collection distinguished by serviceType, filtered via ?serviceType=.
+// Driver collection distinguished by serviceType (rider | transport), filtered via ?serviceType=.
 export async function listDrivers(req: Request, res: Response) {
   const { page, limit, skip } = parsePagination(req)
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : ''
@@ -97,4 +103,41 @@ export async function updateDriver(req: Request, res: Response) {
   })
 
   res.json(driver)
+}
+
+// Removes a rider or driver account with their vehicles, documents and wallet.
+// Past bookings, ratings and settlements stay as history (the rider shows as unassigned there).
+export async function deleteDriver(req: Request, res: Response) {
+  const driver = await Driver.findById(req.params.id)
+  if (!driver) {
+    res.status(404).json({ message: 'Driver not found' })
+    return
+  }
+
+  const activeTrip = await Booking.findOne({ driver: driver._id, status: { $in: ACTIVE_TRIP_STATUSES } }).select('bookingCode')
+  if (activeTrip) {
+    res.status(409).json({ message: `Cannot delete: this account is on an active trip (${activeTrip.bookingCode}). Try again after it ends.` })
+    return
+  }
+
+  const vehicles = await Vehicle.find({ ownerType: 'driver', ownerId: driver._id }).select('_id')
+  const vehicleIds = vehicles.map((v) => v._id)
+  const wallet = await Wallet.findOne({ ownerType: 'driver', ownerId: driver._id })
+
+  await Promise.all([
+    DocumentRecord.deleteMany({ $or: [{ ownerType: 'driver', ownerId: driver._id }, { ownerType: 'vehicle', ownerId: { $in: vehicleIds } }] }),
+    // Other drivers who were matched with one of these vehicles lose the match.
+    Driver.updateMany({ assignedVehicle: { $in: vehicleIds } }, { $set: { assignedVehicle: null } }),
+    wallet ? WalletTransaction.deleteMany({ wallet: wallet._id }) : null,
+    OtpCode.deleteMany({ purpose: 'app_login', destination: driver.phone }),
+  ])
+  await Promise.all([Vehicle.deleteMany({ _id: { $in: vehicleIds } }), wallet ? wallet.deleteOne() : null])
+  await driver.deleteOne()
+
+  await recordAudit(req.admin!, 'driver.deleted', 'Driver', `${driver.name || 'No name'} (${driver.phone})`, {
+    serviceType: driver.serviceType,
+    vehicles: vehicleIds.length,
+    walletBalance: wallet?.balance ?? 0,
+  })
+  res.json({ message: 'Account deleted' })
 }

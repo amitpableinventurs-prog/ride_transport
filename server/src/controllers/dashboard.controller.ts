@@ -77,7 +77,7 @@ export async function getDashboardStats(_req: Request, res: Response) {
   ] = await Promise.all([
     Customer.countDocuments(),
     Driver.countDocuments({ serviceType: 'rider' }),
-    Driver.countDocuments({ serviceType: 'driver' }),
+    Driver.countDocuments({ serviceType: 'transport' }),
     TransportPartner.countDocuments(),
     Vehicle.countDocuments(),
     Booking.countDocuments({ createdAt: { $gte: today } }),
@@ -142,7 +142,7 @@ export async function getDashboardStats(_req: Request, res: Response) {
   const pendingApprovals = [
     ...pendingDrivers.map((d) => ({
       id: d.id as string,
-      type: d.serviceType === 'rider' ? 'Rider' : 'Driver',
+      type: d.serviceType === 'rider' ? 'Rider' : 'Transport rider',
       name: d.name,
       submittedAt: d.createdAt.toISOString(),
     })),

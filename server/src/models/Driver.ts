@@ -4,7 +4,7 @@ import { personalProfileFields } from './personalProfile'
 
 // Covers both sidebar entries "Riders" and "Drivers" (SRS section 9) — an
 // individual ride-service driver not attached to a Transport Partner.
-// serviceType distinguishes two-wheeler/auto "riders" from cab "drivers".
+// serviceType: "rider" runs ride services (bike, auto, cab), "transport" runs goods delivery.
 const driverSchema = new Schema(
   {
     // Empty until the user fills the Profile screen (SRS sign-up creates the account at OTP verify).
@@ -12,7 +12,7 @@ const driverSchema = new Schema(
     email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
     phone: { type: String, required: true, index: true },
     ...personalProfileFields,
-    serviceType: { type: String, enum: ['rider', 'driver'], required: true, default: 'rider' },
+    serviceType: { type: String, enum: ['rider', 'transport'], required: true, default: 'rider' },
     approvalStatus: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
     rejectionReason: { type: String },
     onboarding: {

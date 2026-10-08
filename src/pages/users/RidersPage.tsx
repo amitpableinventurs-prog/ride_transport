@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Eye, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
-import { fetchDrivers, updateDriver } from '@/api/drivers'
+import { CheckCircle2, Eye, Trash2, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
+import { deleteDriver, fetchDrivers, updateDriver } from '@/api/drivers'
 import type { ApprovalStatus, Driver, OnlineStatus, UserStatus } from '@/types/entities'
 import { DriverDetailModal } from './DriverDetailModal'
 import { IconButton } from '@/components/common/IconButton'
@@ -65,13 +65,34 @@ export function RidersPage() {
     }
   }
 
+  async function remove(rider: Driver) {
+    const who = rider.name || rider.phone
+    const ok = window.confirm(
+      `Delete ${who}?\n\nThis permanently removes the account with its vehicles, documents and wallet. Past trips stay in the bookings history. This cannot be undone.`,
+    )
+    if (!ok) return
+    setBusyId(rider.id)
+    setError(null)
+    try {
+      await deleteDriver(rider.id)
+      setRiders((prev) => prev!.filter((d) => d.id !== rider.id))
+      setTotal((t) => Math.max(0, t - 1))
+    } catch (err) {
+      const message = (err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Could not delete rider'
+      setError(message)
+      window.alert(message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / LIMIT))
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold text-navy-800">Riders</h1>
-        <p className="text-sm text-navy-400">Two-wheeler / auto riders offering ride services.</p>
+        <p className="text-sm text-navy-400">Riders offering ride services (bike, auto, cab).</p>
       </div>
 
       <div className="relative w-72">
@@ -158,6 +179,7 @@ export function RidersPage() {
                             disabled={busyId === rider.id}
                             onClick={() => apply(rider, { status: rider.status === 'active' ? 'suspended' : 'active' })}
                           />
+                          <IconButton label="Delete" tone="danger" icon={Trash2} disabled={busyId === rider.id} onClick={() => remove(rider)} />
                         </PermissionGate>
                       </div>
                     </td>

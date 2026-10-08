@@ -642,7 +642,7 @@ Body:
 - `partnerCode` (string) e.g. `"P1A2B3C"`
 - `vehicleTypeId` (string, required) e.g. `"665f1c2e9b1e8a0012345678"`
 - `services` (string[], required)
-- `serviceType` (enum(rider|driver))
+- `serviceType` (enum(rider|transport))
 - `hasLicense` (boolean): Optional; defaults to the answer saved by PUT /onboarding/license
 
 Responses: 200, 400, 401, 409
@@ -1106,7 +1106,7 @@ Required fields depend on the `userType` the OTP was verified for:
 This is the app **Profile** screen for customers and riders/drivers.
 
 - **customer**: `name`, `emergencyContact` (optional `email`, `gender`, `dateOfBirth`, `city`)
-- **driver**: `name`, `emergencyContact`, `serviceType` (`rider` or `driver`) (optional `email`, `gender`, `dateOfBirth`; must be 18+ if given). Starts as `approvalStatus: pending` until an admin verifies documents.
+- **driver**: `name`, `emergencyContact`, `serviceType` (`rider` or `transport`) (optional `email`, `gender`, `dateOfBirth`; must be 18+ if given). Starts as `approvalStatus: pending` until an admin verifies documents.
 - **partner**: `companyName`, `ownerName` (optional `email`, `businessRegNo`, `taxId`). Starts as `pending`.
 
 Auth: Public (no token)
@@ -1121,7 +1121,7 @@ Body:
   - `name` (string, required) e.g. `"Riya Patel"`
   - `phone` (string, required): Indian mobile; stored as +91XXXXXXXXXX. Must differ from the user’s own number. e.g. `"9876543222"`
 - `city` (string): customer
-- `serviceType` (enum(rider|driver)): driver
+- `serviceType` (enum(rider|transport)): driver
 - `companyName` (string): partner
 - `ownerName` (string): partner
 - `businessRegNo` (string): partner
@@ -1424,7 +1424,7 @@ Parameters:
 - `page` (query): Page number (1-based)
 - `limit` (query): Items per page (max 100)
 - `q` (query): Case-insensitive search on name, email, phone
-- `serviceType` (query): rider or driver
+- `serviceType` (query): rider or transport
 - `status` (query): Account status
 - `approvalStatus` (query): KYC approval status
 

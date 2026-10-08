@@ -59,6 +59,7 @@ export async function updateDriver(req: Request, res: Response) {
     dateOfBirth: string
   }>
 
+  const wasVerified = driver.approvalStatus === 'verified'
   if (body.approvalStatus !== undefined) {
     driver.approvalStatus = body.approvalStatus
     // Shown to the rider in the app's approval status screen.
@@ -94,12 +95,23 @@ export async function updateDriver(req: Request, res: Response) {
     }
     throw err
   }
+  // Approving the rider also puts their own vehicles into service once the vehicle documents are verified;
+  // without an active vehicle the rider app cannot go online. Blocked vehicles stay blocked.
+  let vehiclesActivated = 0
+  if (body.approvalStatus === 'verified' && !wasVerified) {
+    const result = await Vehicle.updateMany(
+      { ownerType: 'driver', ownerId: driver._id, status: 'inactive', documentsStatus: 'verified' },
+      { $set: { status: 'active' } },
+    )
+    vehiclesActivated = result.modifiedCount
+  }
   await driver.populate('assignedVehicle', 'registrationNumber model')
 
   const action = body.approvalStatus ? 'driver.approval_changed' : body.status ? 'driver.status_changed' : 'driver.updated'
   await recordAudit(req.admin!, action, 'Driver', `${driver.name} (${driver.phone})`, {
     approvalStatus: body.approvalStatus,
     status: body.status,
+    ...(vehiclesActivated ? { vehiclesActivated } : {}),
   })
 
   res.json(driver)

@@ -7,7 +7,6 @@ import swaggerUi from 'swagger-ui-express'
 import { env } from './config/env'
 import adminRoutes from './routes'
 import appRoutes from './routes/app'
-import appAuthRoutes from './routes/app/auth.routes'
 import customerRoutes from './routes/app/customer.routes'
 import riderRoutes from './routes/app/rider.routes'
 import { commonRouter, publicRouter } from './routes/app/common.routes'
@@ -52,8 +51,7 @@ app.use(
 app.use('/api', apiLimiter, noStore, sanitizeRequest)
 
 app.use('/api/v1/admin', adminRoutes)
-// Customer and rider apps (SRS §10). /api/v1/app is the earlier app API, still used by the Flutter app.
-app.use('/api/v1/auth', appAuthRoutes)
+// Customer and rider apps (SRS §10). Sign-in: /api/v1/app/auth for the Flutter customer app, /api/v1/rider/auth for riders.
 app.use('/api/v1/customer', customerRoutes)
 app.use('/api/v1/rider', riderRoutes)
 app.use('/api/v1/common', commonRouter)

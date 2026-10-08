@@ -277,43 +277,6 @@ const supportPaths = (tag: string) => ({
   },
 })
 
-const srsAuthPaths = {
-  '/otp/send': {
-    post: op('Auth', 'Send OTP to a mobile number', {
-      auth: false,
-      body: obj({ phone: str({ example: '9876543210' }), role: enumOf(['customer', 'rider']) }, ['phone', 'role']),
-      response: ref('AppOtpSent'),
-      errors: [400, 403, 429],
-    }),
-  },
-  '/otp/verify': {
-    post: op('Auth', 'Verify OTP; returns tokens + isNewUser', {
-      auth: false,
-      description:
-        'A new number gets an account immediately (`201`, `isNewUser: true`). The app then shows the Profile screen while `user.profileComplete` is false. New riders start as `approvalStatus: pending`.',
-      body: obj({ phone: str(), role: enumOf(['customer', 'rider']), otp: str({ pattern: '^\\d{6}$' }) }, ['phone', 'role', 'otp']),
-      response: obj({ isNewUser: bool(), accessToken: str(), refreshToken: str(), user: ref('AppUser') }),
-      errors: [400, 403, 429],
-    }),
-  },
-  '/refresh': {
-    post: op('Auth', 'New token pair from a refresh token', {
-      auth: false,
-      description: 'Refresh tokens are single-use: each call revokes the one sent and returns a new pair.',
-      body: ref('RefreshRequest'),
-      response: ref('TokenPair'),
-      errors: [401],
-    }),
-  },
-  '/logout': {
-    post: appOp('Auth', 'Revoke the refresh token and remove the FCM token', {
-      body: obj({ refreshToken: str(), fcmToken: str() }),
-      bodyRequired: false,
-      status: 204,
-    }),
-  },
-}
-
 // Response shapes for the Home / Services / Referral / onboarding screens.
 const placeItem = obj(
   { name: str({ example: 'Vijay Nagar' }), address: str({ example: 'Vijay Nagar, Indore' }), lat: num({ example: 22.7533 }), lng: num({ example: 75.8937 }), favouriteId: { type: 'string', nullable: true, description: 'Saved-place id when favourited (filled heart), else null' } },
@@ -861,7 +824,7 @@ export const openApiSpec = {
       'Most admin endpoints also need a role permission, shown in each description; a missing permission returns `403`.',
       '',
       '### Mobile app APIs',
-      'Customer and rider apps (SRS §10): `POST /auth/otp/send` → `POST /auth/otp/verify` with `role: customer | rider`, then `/customer/*` or `/rider/*`. Paste the app `accessToken` into **appBearerAuth**. App and admin tokens are not interchangeable.',
+      'Customer app: `POST /app/auth/otp/send` → `POST /app/auth/otp/verify` (`userType: customer`), then `/customer/*`. Rider app: `POST /rider/auth/otp/send` → `POST /rider/auth/otp/verify`, then `/rider/*`. Paste the app `accessToken` into **appBearerAuth**. App and admin tokens are not interchangeable.',
       '',
       'The earlier `/app/*` APIs (with a separate `/app/auth/register` step) are still served and are used by the current Flutter app.',
       '',
@@ -873,7 +836,6 @@ export const openApiSpec = {
   servers: [{ url: `http://localhost:${env.port}/api/v1`, description: 'Local' }],
   security: [{ bearerAuth: [] }],
   tags: [
-    { name: 'Auth', description: 'SRS §10.1: OTP login for the customer and rider apps' },
     { name: 'Customer', description: 'SRS §10.2: customer app' },
     { name: 'Rider', description: 'SRS §10.3: rider app' },
     { name: 'Common', description: 'SRS §10.5: app config, CMS, push devices' },
@@ -1592,7 +1554,6 @@ export const openApiSpec = {
     },
   },
   paths: {
-    ...prefixPaths('/auth', srsAuthPaths),
     ...prefixPaths('/customer', customerPaths),
     ...prefixPaths('/rider', riderPaths),
     ...commonPaths,

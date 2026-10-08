@@ -21,9 +21,9 @@ Session tokens also carry a session id (`fid`).
 
 ## Refresh tokens and sessions
 
-- **Refresh tokens are single use.** `POST /admin/auth/refresh`, `POST /auth/refresh`, `POST /rider/auth/refresh` and `POST /app/auth/refresh` return a new access and refresh pair. The client must store the new refresh token.
+- **Refresh tokens are single use.** `POST /admin/auth/refresh`, `POST /rider/auth/refresh` and `POST /app/auth/refresh` return a new access and refresh pair. The client must store the new refresh token.
 - **Replay detection.** If an already-used refresh token is sent again, it was copied. The whole login session is revoked: that refresh token, the newer one and every access token of the session stop working, and the user must sign in again.
-- **Logout ends the session.** Admin logout (`POST /admin/auth/logout`) and app logout (`POST /auth/logout`, `/rider/auth/logout`, `/app/auth/logout`) revoke the session, so the access token stops working at once instead of at its expiry. Send `refreshToken` in the app logout body.
+- **Logout ends the session.** Admin logout (`POST /admin/auth/logout`) and app logout (`POST /rider/auth/logout`, `/app/auth/logout`) revoke the session, so the access token stops working at once instead of at its expiry. Send `refreshToken` in the app logout body.
 - **Every request checks the account.** A suspended admin or user is refused immediately, and admin roles and permissions are read fresh on each call, so a role change applies at once.
 - Revocation records live in the `revokedtokens` collection and are removed automatically after they expire. Socket.IO connections use the same checks.
 

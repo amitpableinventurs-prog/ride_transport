@@ -52,64 +52,16 @@ Errors: 400 invalid amount or signature, 404 order or booking not found, 409 tri
 
 | Who | How | Token used on |
 |---|---|---|
-| Customer / rider app (new) | `POST /api/v1/auth/otp/send` then `POST /api/v1/auth/otp/verify`. Body: `phone` plus `userType` (`customer` or `driver`) or `role` (`customer` or `rider`) | `/customer/*`, `/rider/*`, `/common/*` |
-| Customer / rider / partner app (earlier, still served, used by the Flutter app) | `POST /api/v1/app/auth/otp/send`, `/app/auth/otp/resend`, `/app/auth/otp/verify`, `/app/auth/register`, `/app/auth/refresh`, `/app/auth/me`, `/app/auth/logout`. Body: `phone` plus `userType` (`customer`, `driver`, `partner`) | `/app/profile` and the same app APIs |
+| Customer app (Flutter) | `POST /api/v1/app/auth/otp/send`, `/app/auth/otp/resend`, `/app/auth/otp/verify`, `/app/auth/register`, `/app/auth/refresh`, `/app/auth/me`, `/app/auth/logout`. Body: `phone` plus `userType` (`customer`; `driver` and `partner` also work) | `/customer/*`, `/app/profile`, `/common/*` |
 | Rider app (own login, no role needed) | `POST /api/v1/rider/auth/otp/send`, `/rider/auth/otp/resend`, `/rider/auth/otp/verify`, `/rider/auth/refresh`, `/rider/auth/logout`, `/rider/auth/me`. Body: `phone` (and `otp`) | `/rider/*` |
 | Admin panel | `POST /api/v1/admin/auth/login` (email and password), then `POST /api/v1/admin/auth/login/verify-otp` | `/admin/*` |
 
-Send `Authorization: Bearer <accessToken>`. Access tokens are short-lived: use `POST /auth/refresh` (single-use refresh tokens). In development, the OTP is returned as `devOtp` in the send response.
+Send `Authorization: Bearer <accessToken>`. Access tokens are short-lived: use the refresh endpoint of the same login (single-use refresh tokens). In development, the OTP is returned as `devOtp` in the send response.
 
 Paths in section 3 are relative to `/api/v1` and are listed under the same tags as Swagger. Customer and rider tags use the app token, admin tags use the admin token.
 
 ## 3. Full reference
 
-
-
-## Auth
-
-#### `POST /auth/otp/send` — Send OTP to a mobile number
-
-Auth: Public (no token)
-
-Body:
-- `phone` (string, required) e.g. `"9876543210"`
-- `role` (enum(customer|rider), required)
-
-Responses: 200, 400, 403, 429
-
-#### `POST /auth/otp/verify` — Verify OTP; returns tokens + isNewUser
-
-A new number gets an account immediately (`201`, `isNewUser: true`). The app then shows the Profile screen while `user.profileComplete` is false. New riders start as `approvalStatus: pending`.
-
-Auth: Public (no token)
-
-Body:
-- `phone` (string, required)
-- `role` (enum(customer|rider), required)
-- `otp` (string, required)
-
-Responses: 200, 400, 403, 429
-
-#### `POST /auth/refresh` — New token pair from a refresh token
-
-Refresh tokens are single-use: each call revokes the one sent and returns a new pair.
-
-Auth: Public (no token)
-
-Body:
-- `refreshToken` (string, required)
-
-Responses: 200, 401
-
-#### `POST /auth/logout` — Revoke the refresh token and remove the FCM token
-
-Auth: Bearer token
-
-Body:
-- `refreshToken` (string)
-- `fcmToken` (string)
-
-Responses: 204, 401
 
 
 ## Customer
@@ -1120,7 +1072,7 @@ Responses: 200, 400, 403, 429
 
 #### `POST /app/auth/otp/resend` — Resend the login OTP
 
-Same as `/auth/otp/send`: issues a fresh code and invalidates the previous one.
+Same as `/app/auth/otp/send`: issues a fresh code and invalidates the previous one.
 
 Auth: Public (no token)
 
@@ -1134,7 +1086,7 @@ Responses: 200, 400, 403, 429
 
 Existing user: `isNewUser: false` with tokens.
 
-New number: `isNewUser: true` with a `registrationToken` (valid 30 min) for `/auth/register`.
+New number: `isNewUser: true` with a `registrationToken` (valid 30 min) for `/app/auth/register`.
 
 Wrong codes return `attemptsLeft`; after 5 wrong attempts a new OTP must be requested.
 
@@ -1203,7 +1155,7 @@ Responses: 204, 401
 
 #### `GET /app/profile` — Get the Profile screen data
 
-Same record as `/auth/me`. `profileComplete: false` means the app should show the Profile screen (name or emergency contact missing).
+Same record as `/app/auth/me`. `profileComplete: false` means the app should show the Profile screen (name or emergency contact missing).
 
 Auth: Bearer token
 

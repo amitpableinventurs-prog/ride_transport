@@ -5,9 +5,9 @@ Live Swagger: `http://localhost:5050/api-docs` (tag **Customer**).
 
 All `/customer/*` calls need `Authorization: Bearer <accessToken>` from the OTP login:
 
-1. `POST /auth/otp/send` `{ "phone": "9876500011", "userType": "customer" }`
-2. `POST /auth/otp/verify` `{ "phone": "...", "userType": "customer", "otp": "123456" }` returns `accessToken` and `refreshToken`
-3. `POST /auth/refresh` when the access token expires
+1. `POST /app/auth/otp/send` `{ "phone": "9876500011", "userType": "customer" }`
+2. `POST /app/auth/otp/verify` `{ "phone": "...", "userType": "customer", "otp": "123456" }`. An existing user gets `accessToken` and `refreshToken`. A new number gets `isNewUser: true` and a `registrationToken`: finish with `POST /app/auth/register` (name and emergency contact).
+3. `POST /app/auth/refresh` when the access token expires (the refresh token is single use: store the new one)
 
 Errors are `{ "message": "..." }` with a 4xx status.
 

@@ -21,7 +21,7 @@ Base URL `http://localhost:5050/api/v1`. All `/rider/*` calls need `Authorizatio
 
 ## Flow
 
-1. **Login (rider only):** `POST /rider/auth/otp/send`, then `POST /rider/auth/otp/verify` with `{ "phone": "9876543210", "otp": "123456" }`. No `role` is needed: the account is always a rider. Keep `accessToken` and `refreshToken`; use `POST /rider/auth/refresh`, `POST /rider/auth/logout` and `GET /rider/auth/me` after that. The shared `/auth/*` and `/app/auth/*` logins still work.
+1. **Login (rider only):** `POST /rider/auth/otp/send`, then `POST /rider/auth/otp/verify` with `{ "phone": "9876543210", "otp": "123456" }`. No `role` is needed: the account is always a rider. Keep `accessToken` and `refreshToken`; use `POST /rider/auth/refresh`, `POST /rider/auth/logout` and `GET /rider/auth/me` after that. The older `/app/auth/*` login also works.
 2. **Licence question:** `PUT /rider/onboarding/license` with `{ "hasLicense": true }`.
    - `true` returns modes `ride` and `transport` ("Get Bike Taxi + Delivery Orders").
    - `false` returns mode `transport` only ("Only Delivery Orders"). The licence step is skipped and ride services are refused later.

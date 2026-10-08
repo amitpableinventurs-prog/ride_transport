@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
+import { CheckCircle2, Eye, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { fetchDrivers, updateDriver } from '@/api/drivers'
 import type { ApprovalStatus, Driver, OnlineStatus, UserStatus } from '@/types/entities'
+import { DriverDetailModal } from './DriverDetailModal'
+import { IconButton } from '@/components/common/IconButton'
 import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
@@ -35,6 +37,7 @@ export function DriversPage() {
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<Driver | null>(null)
 
   async function load() {
     const data = await fetchDrivers({ page, limit: LIMIT, q: q || undefined, serviceType: 'driver' })
@@ -96,27 +99,37 @@ export function DriversPage() {
                 <tr className="border-b border-navy-100 bg-navy-50/50 text-xs uppercase tracking-wide text-navy-400">
                   <th className="px-5 py-3 font-medium">Driver</th>
                   <th className="px-5 py-3 font-medium">Phone</th>
+                  <th className="px-5 py-3 font-medium">Vehicle</th>
                   <th className="px-5 py-3 font-medium">Approval</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium">Online</th>
                   <th className="px-5 py-3 font-medium">Rating</th>
                   <th className="px-5 py-3 font-medium">Trips</th>
                   <th className="px-5 py-3 font-medium">Earnings</th>
-                  <th className="px-5 py-3 font-medium text-right">Actions</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {drivers.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-5 py-8 text-center text-navy-300">
+                    <td colSpan={10} className="px-5 py-8 text-center text-navy-300">
                       No drivers found.
                     </td>
                   </tr>
                 )}
                 {drivers.map((driver) => (
                   <tr key={driver.id} className="border-b border-navy-50 last:border-0">
-                    <td className="px-5 py-3 font-medium text-navy-800">{driver.name}</td>
+                    <td className="px-5 py-3 font-medium text-navy-800">
+                      <button onClick={() => setViewing(driver)} className="text-left hover:text-brand-orange hover:underline">
+                        {driver.name || driver.phone}
+                      </button>
+                    </td>
                     <td className="px-5 py-3 text-navy-600">{driver.phone}</td>
+                    <td className="px-5 py-3 text-navy-600">
+                      {driver.assignedVehicle && typeof driver.assignedVehicle === 'object'
+                        ? `${driver.assignedVehicle.registrationNumber} · ${driver.assignedVehicle.model}`
+                        : '—'}
+                    </td>
                     <td className="px-5 py-3">
                       <Badge tone={APPROVAL_TONE[driver.approvalStatus]}>{driver.approvalStatus}</Badge>
                     </td>
@@ -129,44 +142,30 @@ export function DriversPage() {
                     <td className="px-5 py-3 text-navy-600">{driver.rating.toFixed(1)}</td>
                     <td className="px-5 py-3 text-navy-600">{driver.totalTrips}</td>
                     <td className="px-5 py-3 text-navy-600">{moneyFmt.format(driver.earnings)}</td>
-                    <td className="px-5 py-3">
-                      <PermissionGate permission="users.manage">
-                        <div className="flex items-center justify-end gap-1.5">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <IconButton label="View details and documents" icon={Eye} onClick={() => setViewing(driver)} />
+                        <PermissionGate permission="users.manage">
                           {driver.approvalStatus === 'pending' && (
                             <>
-                              <button
+                              <IconButton
+                                label="Approve"
+                                tone="success"
+                                icon={CheckCircle2}
+                                disabled={busyId === driver.id}
                                 onClick={() => apply(driver, { approvalStatus: 'verified' })}
-                                disabled={busyId === driver.id}
-                                className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-brand-green-dark hover:bg-green-50 disabled:opacity-50"
-                              >
-                                <CheckCircle2 size={13} /> Approve
-                              </button>
-                              <button
-                                onClick={() => apply(driver, { approvalStatus: 'rejected' })}
-                                disabled={busyId === driver.id}
-                                className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-brand-red hover:bg-red-50 disabled:opacity-50"
-                              >
-                                <XCircle size={13} /> Reject
-                              </button>
+                              />
+                              <IconButton label="Reject (asks for a reason)" tone="danger" icon={XCircle} onClick={() => setViewing(driver)} />
                             </>
                           )}
-                          <button
-                            onClick={() => apply(driver, { status: driver.status === 'active' ? 'suspended' : 'active' })}
+                          <IconButton
+                            label={driver.status === 'active' ? 'Suspend' : 'Activate'}
+                            icon={driver.status === 'active' ? ShieldOff : ShieldCheck}
                             disabled={busyId === driver.id}
-                            className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-600 hover:bg-navy-50 disabled:opacity-50"
-                          >
-                            {driver.status === 'active' ? (
-                              <>
-                                <ShieldOff size={13} /> Suspend
-                              </>
-                            ) : (
-                              <>
-                                <ShieldCheck size={13} /> Activate
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </PermissionGate>
+                            onClick={() => apply(driver, { status: driver.status === 'active' ? 'suspended' : 'active' })}
+                          />
+                        </PermissionGate>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -196,6 +195,18 @@ export function DriversPage() {
             </div>
           </div>
         </>
+      )}
+
+      {viewing && (
+        <DriverDetailModal
+          driver={viewing}
+          label="Driver"
+          onClose={() => setViewing(null)}
+          onUpdated={(updated) => {
+            setViewing(updated)
+            setDrivers((prev) => prev!.map((d) => (d.id === updated.id ? updated : d)))
+          }}
+        />
       )}
     </div>
   )

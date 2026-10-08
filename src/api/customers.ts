@@ -11,7 +11,17 @@ export async function fetchCustomers(params: {
   return data
 }
 
-export async function updateCustomerStatus(id: string, status: UserStatus): Promise<Customer> {
-  const { data } = await apiClient.patch<Customer>(`/users/customers/${id}`, { status })
+export async function updateCustomer(
+  id: string,
+  patch: Partial<{
+    status: UserStatus
+    name: string
+    email: string
+    city: string
+    gender: 'male' | 'female' | 'other'
+    dateOfBirth: string
+  }>,
+): Promise<Customer> {
+  const { data } = await apiClient.patch<Customer>(`/users/customers/${id}`, patch)
   return data
 }

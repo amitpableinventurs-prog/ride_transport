@@ -30,10 +30,28 @@ export async function listCustomers(req: Request, res: Response) {
   res.json({ items, total, page, limit })
 }
 
-export async function updateCustomerStatus(req: Request, res: Response) {
-  const { status } = req.body as { status?: 'active' | 'suspended' | 'blocked' }
-  if (!status || !['active', 'suspended', 'blocked'].includes(status)) {
+// Status changes plus profile corrections (name, email, city, gender, date of birth).
+export async function updateCustomer(req: Request, res: Response) {
+  const body = req.body as Partial<{
+    status: 'active' | 'suspended' | 'blocked'
+    name: string
+    email: string
+    city: string
+    gender: 'male' | 'female' | 'other'
+    dateOfBirth: string
+  }>
+
+  if (body.status !== undefined && !['active', 'suspended', 'blocked'].includes(body.status)) {
     res.status(400).json({ message: 'A valid status is required' })
+    return
+  }
+  if (body.gender !== undefined && !['male', 'female', 'other'].includes(body.gender)) {
+    res.status(400).json({ message: 'gender must be male, female or other' })
+    return
+  }
+  const dob = body.dateOfBirth !== undefined ? new Date(body.dateOfBirth) : undefined
+  if (dob && Number.isNaN(dob.getTime())) {
+    res.status(400).json({ message: 'dateOfBirth is not a valid date' })
     return
   }
 
@@ -43,10 +61,30 @@ export async function updateCustomerStatus(req: Request, res: Response) {
     return
   }
 
-  customer.status = status
-  await customer.save()
+  if (body.status !== undefined) customer.status = body.status
+  if (body.name !== undefined) customer.name = String(body.name).trim().slice(0, 80)
+  if (body.email !== undefined) customer.email = String(body.email).trim().toLowerCase() || undefined
+  if (body.city !== undefined) customer.city = String(body.city).trim().slice(0, 80) || undefined
+  if (body.gender !== undefined) customer.gender = body.gender
+  if (dob) customer.dateOfBirth = dob
 
-  await recordAudit(req.admin!, 'customer.status_changed', 'Customer', `${customer.name} (${customer.email ?? customer.phone})`, { status })
+  try {
+    await customer.save()
+  } catch (err) {
+    if ((err as { code?: number }).code === 11000) {
+      res.status(409).json({ message: 'Another account already uses this email' })
+      return
+    }
+    throw err
+  }
+
+  await recordAudit(
+    req.admin!,
+    body.status ? 'customer.status_changed' : 'customer.updated',
+    'Customer',
+    `${customer.name} (${customer.email ?? customer.phone})`,
+    body.status ? { status: body.status } : undefined,
+  )
 
   res.json(customer)
 }

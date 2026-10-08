@@ -42,3 +42,9 @@ export async function updateVehicle(
   const { data } = await apiClient.patch<Vehicle>(`/fleet/vehicles/${id}`, patch)
   return data
 }
+
+/** Matches the vehicle with a driver; pass null to remove the match. */
+export async function assignVehicleDriver(id: string, driverId: string | null): Promise<Vehicle> {
+  const { data } = await apiClient.put<Vehicle>(`/fleet/vehicles/${id}/driver`, { driverId })
+  return data
+}

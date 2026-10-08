@@ -6,6 +6,6 @@ const router = Router()
 
 router.use(requireAuth)
 router.get('/', requirePermission('users.view'), customersController.listCustomers)
-router.patch('/:id', requirePermission('users.manage'), customersController.updateCustomerStatus)
+router.patch('/:id', requirePermission('users.manage'), customersController.updateCustomer)
 
 export default router

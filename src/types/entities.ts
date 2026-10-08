@@ -8,6 +8,12 @@ export interface Customer {
   phone: string
   status: UserStatus
   city?: string
+  gender?: 'male' | 'female' | 'other'
+  dateOfBirth?: string | null
+  photoUrl?: string
+  referralCode?: string
+  savedPlaces?: { id: string; label: string; name?: string; address: string }[]
+  emergencyContacts?: { name: string; phone: string }[]
   totalBookings: number
   rating: number
   createdAt: string
@@ -26,7 +32,11 @@ export interface Driver {
   approvalStatus: ApprovalStatus
   status: UserStatus
   onlineStatus: OnlineStatus
-  assignedVehicle?: string | null
+  gender?: 'male' | 'female' | 'other'
+  dateOfBirth?: string | null
+  photoUrl?: string
+  rejectionReason?: string
+  assignedVehicle?: { id: string; registrationNumber: string; model: string } | string | null
   rating: number
   totalTrips: number
   cancellations: number
@@ -84,6 +94,7 @@ export interface Vehicle {
   ownerId: string
   ownerModel: 'Driver' | 'TransportPartner'
   ownerLabel?: string
+  assignedDriver?: { id: string; name: string; phone: string } | null
   capacity?: string
   status: 'active' | 'inactive' | 'blocked'
   documentsStatus: 'pending' | 'verified' | 'rejected' | 'expired'
@@ -99,7 +110,9 @@ export interface DocumentRecord {
   ownerType: DocumentOwnerType
   ownerId: string
   docType: string
+  docNumber?: string
   fileUrl: string
+  backUrl?: string
   status: DocumentStatus
   expiryDate?: string | null
   reviewedBy?: string | null

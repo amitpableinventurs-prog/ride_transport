@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
-import { createVehicle, fetchVehicles, updateVehicle } from '@/api/vehicles'
+import { ChevronLeft, Eye, ChevronRight, Plus, Search } from 'lucide-react'
+import { assignVehicleDriver, createVehicle, fetchVehicles, updateVehicle } from '@/api/vehicles'
 import { fetchVehicleTypes } from '@/api/vehicleTypes'
 import { fetchDrivers } from '@/api/drivers'
 import { fetchPartners } from '@/api/partners'
 import type { Driver, OwnerType, ServiceMode, TransportPartner, Vehicle, VehicleType } from '@/types/entities'
+import { VehicleDetailModal } from './VehicleDetailModal'
 import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
@@ -31,6 +32,8 @@ export function VehiclesPage() {
   const [page, setPage] = useState(1)
   const [q, setQ] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [assigning, setAssigning] = useState<Vehicle | null>(null)
+  const [viewing, setViewing] = useState<Vehicle | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -104,7 +107,7 @@ export function VehiclesPage() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-2xl border border-navy-100 bg-white shadow-sm">
-            <table className="w-full min-w-[960px] text-left text-sm">
+            <table className="w-full min-w-[1080px] text-left text-sm">
               <thead>
                 <tr className="border-b border-navy-100 bg-navy-50/50 text-xs uppercase tracking-wide text-navy-400">
                   <th className="px-5 py-3 font-medium">Registration</th>
@@ -112,6 +115,7 @@ export function VehiclesPage() {
                   <th className="px-5 py-3 font-medium">Vehicle type</th>
                   <th className="px-5 py-3 font-medium">Service mode</th>
                   <th className="px-5 py-3 font-medium">Owner</th>
+                  <th className="px-5 py-3 font-medium">Assigned driver</th>
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium">Documents</th>
                   <th className="px-5 py-3 font-medium text-right">Actions</th>
@@ -120,14 +124,18 @@ export function VehiclesPage() {
               <tbody>
                 {vehicles.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-5 py-8 text-center text-navy-300">
+                    <td colSpan={9} className="px-5 py-8 text-center text-navy-300">
                       No vehicles found.
                     </td>
                   </tr>
                 )}
                 {vehicles.map((vehicle) => (
                   <tr key={vehicle.id} className="border-b border-navy-50 last:border-0">
-                    <td className="px-5 py-3 font-medium text-navy-800">{vehicle.registrationNumber}</td>
+                    <td className="px-5 py-3 font-medium text-navy-800">
+                      <button onClick={() => setViewing(vehicle)} className="text-left hover:text-brand-orange hover:underline">
+                        {vehicle.registrationNumber}
+                      </button>
+                    </td>
                     <td className="px-5 py-3 text-navy-600">{vehicle.model}</td>
                     <td className="px-5 py-3 text-navy-600">
                       {typeof vehicle.vehicleType === 'string' ? vehicle.vehicleType : vehicle.vehicleType.name}
@@ -136,6 +144,9 @@ export function VehiclesPage() {
                       <Badge tone="info">{vehicle.serviceMode}</Badge>
                     </td>
                     <td className="px-5 py-3 text-navy-600">{vehicle.ownerLabel ?? '—'}</td>
+                    <td className="px-5 py-3 text-navy-600">
+                      {vehicle.assignedDriver ? `${vehicle.assignedDriver.name || 'No name yet'} (${vehicle.assignedDriver.phone})` : <span className="text-navy-300">Unassigned</span>}
+                    </td>
                     <td className="px-5 py-3">
                       <Badge tone={STATUS_TONE[vehicle.status]}>{vehicle.status}</Badge>
                     </td>
@@ -143,7 +154,19 @@ export function VehiclesPage() {
                       <Badge tone={DOC_TONE[vehicle.documentsStatus]}>{vehicle.documentsStatus}</Badge>
                     </td>
                     <td className="px-5 py-3 text-right">
+                      <button
+                        onClick={() => setViewing(vehicle)}
+                        className="mr-1.5 inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-600 hover:bg-navy-50"
+                      >
+                        <Eye size={13} /> View
+                      </button>
                       <PermissionGate permission="fleet.manage">
+                        <button
+                          onClick={() => setAssigning(vehicle)}
+                          className="mr-1.5 inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-600 hover:bg-navy-50"
+                        >
+                          {vehicle.assignedDriver ? 'Change driver' : 'Assign driver'}
+                        </button>
                         <button
                           onClick={() => toggleStatus(vehicle)}
                           disabled={busyId === vehicle.id}
@@ -183,6 +206,28 @@ export function VehiclesPage() {
         </>
       )}
 
+      {viewing && (
+        <VehicleDetailModal
+          vehicle={viewing}
+          onClose={() => setViewing(null)}
+          onUpdated={(updated) => {
+            setViewing(updated)
+            setVehicles((prev) => prev!.map((v) => (v.id === updated.id ? updated : v)))
+          }}
+        />
+      )}
+
+      {assigning && (
+        <AssignDriverModal
+          vehicle={assigning}
+          onClose={() => setAssigning(null)}
+          onSaved={() => {
+            setAssigning(null)
+            load().catch(() => setError('Could not refresh vehicles.'))
+          }}
+        />
+      )}
+
       {showCreate && (
         <CreateVehicleModal
           onClose={() => setShowCreate(false)}
@@ -193,6 +238,77 @@ export function VehiclesPage() {
         />
       )}
     </div>
+  )
+}
+
+function AssignDriverModal({ vehicle, onClose, onSaved }: { vehicle: Vehicle; onClose: () => void; onSaved: () => void }) {
+  const [drivers, setDrivers] = useState<Driver[]>([])
+  const [driverId, setDriverId] = useState(vehicle.assignedDriver?.id ?? '')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchDrivers({ limit: 100, status: 'active', approvalStatus: 'verified' })
+      .then((d) => setDrivers(d.items))
+      .catch(() => setError('Could not load drivers'))
+  }, [])
+
+  async function save(next: string | null) {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await assignVehicleDriver(vehicle.id, next)
+      onSaved()
+    } catch (err) {
+      setError((err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Could not save assignment')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal title={`Driver for ${vehicle.registrationNumber}`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-xs text-navy-400">
+          Only active, verified drivers are listed. A driver can have one vehicle, so assigning moves them off their current one.
+        </p>
+        <select
+          value={driverId}
+          onChange={(e) => setDriverId(e.target.value)}
+          className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm outline-none focus:border-navy-400"
+        >
+          <option value="" disabled>
+            Select driver
+          </option>
+          {drivers.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name || 'No name yet'} · {d.phone} ({d.serviceType})
+            </option>
+          ))}
+        </select>
+
+        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => save(driverId)}
+            disabled={submitting || !driverId}
+            className="flex-1 rounded-lg bg-brand-orange py-2.5 text-sm font-semibold text-white hover:bg-brand-orange-dark disabled:opacity-60"
+          >
+            Save
+          </button>
+          {vehicle.assignedDriver && (
+            <button
+              onClick={() => save(null)}
+              disabled={submitting}
+              className="rounded-lg border border-navy-100 px-4 py-2.5 text-sm font-medium text-brand-red hover:bg-red-50 disabled:opacity-60"
+            >
+              Unassign
+            </button>
+          )}
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -224,7 +340,7 @@ function CreateVehicleModal({ onClose, onCreated }: { onClose: () => void; onCre
       .catch(() => setError('Could not load form options'))
   }, [])
 
-  const ownerOptions = ownerType === 'driver' ? drivers.map((d) => ({ id: d.id, label: d.name })) : partners.map((p) => ({ id: p.id, label: p.companyName }))
+  const ownerOptions = ownerType === 'driver' ? drivers.map((d) => ({ id: d.id, label: `${d.name || 'No name yet'} · ${d.phone} (${d.serviceType})` })) : partners.map((p) => ({ id: p.id, label: p.companyName }))
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()

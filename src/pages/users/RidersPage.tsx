@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
+import { CheckCircle2, Eye, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { fetchDrivers, updateDriver } from '@/api/drivers'
 import type { ApprovalStatus, Driver, OnlineStatus, UserStatus } from '@/types/entities'
+import { DriverDetailModal } from './DriverDetailModal'
+import { IconButton } from '@/components/common/IconButton'
 import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
@@ -35,6 +37,7 @@ export function RidersPage() {
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<Driver | null>(null)
 
   async function load() {
     const data = await fetchDrivers({ page, limit: LIMIT, q: q || undefined, serviceType: 'rider' })
@@ -102,7 +105,7 @@ export function RidersPage() {
                   <th className="px-5 py-3 font-medium">Rating</th>
                   <th className="px-5 py-3 font-medium">Trips</th>
                   <th className="px-5 py-3 font-medium">Earnings</th>
-                  <th className="px-5 py-3 font-medium text-right">Actions</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -115,7 +118,11 @@ export function RidersPage() {
                 )}
                 {riders.map((rider) => (
                   <tr key={rider.id} className="border-b border-navy-50 last:border-0">
-                    <td className="px-5 py-3 font-medium text-navy-800">{rider.name}</td>
+                    <td className="px-5 py-3 font-medium text-navy-800">
+                      <button onClick={() => setViewing(rider)} className="text-left hover:text-brand-orange hover:underline">
+                        {rider.name || rider.phone}
+                      </button>
+                    </td>
                     <td className="px-5 py-3 text-navy-600">{rider.phone}</td>
                     <td className="px-5 py-3">
                       <Badge tone={APPROVAL_TONE[rider.approvalStatus]}>{rider.approvalStatus}</Badge>
@@ -129,44 +136,30 @@ export function RidersPage() {
                     <td className="px-5 py-3 text-navy-600">{rider.rating.toFixed(1)}</td>
                     <td className="px-5 py-3 text-navy-600">{rider.totalTrips}</td>
                     <td className="px-5 py-3 text-navy-600">{moneyFmt.format(rider.earnings)}</td>
-                    <td className="px-5 py-3">
-                      <PermissionGate permission="users.manage">
-                        <div className="flex items-center justify-end gap-1.5">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <IconButton label="View details and documents" icon={Eye} onClick={() => setViewing(rider)} />
+                        <PermissionGate permission="users.manage">
                           {rider.approvalStatus === 'pending' && (
                             <>
-                              <button
+                              <IconButton
+                                label="Approve"
+                                tone="success"
+                                icon={CheckCircle2}
+                                disabled={busyId === rider.id}
                                 onClick={() => apply(rider, { approvalStatus: 'verified' })}
-                                disabled={busyId === rider.id}
-                                className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-brand-green-dark hover:bg-green-50 disabled:opacity-50"
-                              >
-                                <CheckCircle2 size={13} /> Approve
-                              </button>
-                              <button
-                                onClick={() => apply(rider, { approvalStatus: 'rejected' })}
-                                disabled={busyId === rider.id}
-                                className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-brand-red hover:bg-red-50 disabled:opacity-50"
-                              >
-                                <XCircle size={13} /> Reject
-                              </button>
+                              />
+                              <IconButton label="Reject (asks for a reason)" tone="danger" icon={XCircle} onClick={() => setViewing(rider)} />
                             </>
                           )}
-                          <button
-                            onClick={() => apply(rider, { status: rider.status === 'active' ? 'suspended' : 'active' })}
+                          <IconButton
+                            label={rider.status === 'active' ? 'Suspend' : 'Activate'}
+                            icon={rider.status === 'active' ? ShieldOff : ShieldCheck}
                             disabled={busyId === rider.id}
-                            className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-600 hover:bg-navy-50 disabled:opacity-50"
-                          >
-                            {rider.status === 'active' ? (
-                              <>
-                                <ShieldOff size={13} /> Suspend
-                              </>
-                            ) : (
-                              <>
-                                <ShieldCheck size={13} /> Activate
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </PermissionGate>
+                            onClick={() => apply(rider, { status: rider.status === 'active' ? 'suspended' : 'active' })}
+                          />
+                        </PermissionGate>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -196,6 +189,18 @@ export function RidersPage() {
             </div>
           </div>
         </>
+      )}
+
+      {viewing && (
+        <DriverDetailModal
+          driver={viewing}
+          label="Rider"
+          onClose={() => setViewing(null)}
+          onUpdated={(updated) => {
+            setViewing(updated)
+            setRiders((prev) => prev!.map((d) => (d.id === updated.id ? updated : d)))
+          }}
+        />
       )}
     </div>
   )

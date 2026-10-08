@@ -29,7 +29,7 @@ export async function listDrivers(req: Request, res: Response) {
   }
 
   const [items, total] = await Promise.all([
-    Driver.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Driver.find(filter).populate('assignedVehicle', 'registrationNumber model').sort({ createdAt: -1 }).skip(skip).limit(limit),
     Driver.countDocuments(filter),
   ])
 
@@ -47,6 +47,10 @@ export async function updateDriver(req: Request, res: Response) {
     approvalStatus: 'pending' | 'verified' | 'rejected'
     status: 'active' | 'suspended' | 'blocked'
     rejectionReason: string
+    name: string
+    email: string
+    gender: 'male' | 'female' | 'other'
+    dateOfBirth: string
   }>
 
   if (body.approvalStatus !== undefined) {
@@ -55,9 +59,38 @@ export async function updateDriver(req: Request, res: Response) {
     driver.rejectionReason = body.approvalStatus === 'rejected' ? body.rejectionReason?.trim() || undefined : undefined
   }
   if (body.status !== undefined) driver.status = body.status
-  await driver.save()
 
-  const action = body.approvalStatus ? 'driver.approval_changed' : 'driver.status_changed'
+  // Profile corrections made while reviewing the account.
+  if (body.name !== undefined) driver.name = String(body.name).trim().slice(0, 80)
+  if (body.email !== undefined) driver.email = String(body.email).trim().toLowerCase() || undefined
+  if (body.gender !== undefined) {
+    if (!['male', 'female', 'other'].includes(body.gender)) {
+      res.status(400).json({ message: 'gender must be male, female or other' })
+      return
+    }
+    driver.gender = body.gender
+  }
+  if (body.dateOfBirth !== undefined) {
+    const dob = new Date(body.dateOfBirth)
+    if (Number.isNaN(dob.getTime())) {
+      res.status(400).json({ message: 'dateOfBirth is not a valid date' })
+      return
+    }
+    driver.dateOfBirth = dob
+  }
+
+  try {
+    await driver.save()
+  } catch (err) {
+    if ((err as { code?: number }).code === 11000) {
+      res.status(409).json({ message: 'Another account already uses this email' })
+      return
+    }
+    throw err
+  }
+  await driver.populate('assignedVehicle', 'registrationNumber model')
+
+  const action = body.approvalStatus ? 'driver.approval_changed' : body.status ? 'driver.status_changed' : 'driver.updated'
   await recordAudit(req.admin!, action, 'Driver', `${driver.name} (${driver.phone})`, {
     approvalStatus: body.approvalStatus,
     status: body.status,

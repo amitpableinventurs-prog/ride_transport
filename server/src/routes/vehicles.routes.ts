@@ -8,5 +8,6 @@ router.use(requireAuth)
 router.get('/', requirePermission('fleet.view'), vehiclesController.listVehicles)
 router.post('/', requirePermission('fleet.manage'), vehiclesController.createVehicle)
 router.patch('/:id', requirePermission('fleet.manage'), vehiclesController.updateVehicle)
+router.put('/:id/driver', requirePermission('fleet.manage'), vehiclesController.assignVehicleDriver)
 
 export default router

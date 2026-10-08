@@ -5,6 +5,8 @@ export async function fetchDocuments(params: {
   page?: number
   limit?: number
   ownerType?: DocumentOwnerType
+  ownerId?: string
+  docType?: string
   status?: DocumentStatus
 } = {}): Promise<PaginatedResult<DocumentRecord>> {
   const { data } = await apiClient.get<PaginatedResult<DocumentRecord>>('/fleet/documents', { params })

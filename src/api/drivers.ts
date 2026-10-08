@@ -15,7 +15,15 @@ export async function fetchDrivers(params: {
 
 export async function updateDriver(
   id: string,
-  patch: Partial<{ approvalStatus: ApprovalStatus; status: UserStatus }>,
+  patch: Partial<{
+    approvalStatus: ApprovalStatus
+    status: UserStatus
+    rejectionReason: string
+    name: string
+    email: string
+    gender: 'male' | 'female' | 'other'
+    dateOfBirth: string
+  }>,
 ): Promise<Driver> {
   const { data } = await apiClient.patch<Driver>(`/users/drivers/${id}`, patch)
   return data

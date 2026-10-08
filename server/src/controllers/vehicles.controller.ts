@@ -45,10 +45,14 @@ export async function listVehicles(req: Request, res: Response) {
     Vehicle.countDocuments(filter),
   ])
 
+  // Driver currently matched to each vehicle (Driver.assignedVehicle), fetched in one query.
+  const assigned = await Driver.find({ assignedVehicle: { $in: vehicles.map((v) => v._id) } }).select('name phone assignedVehicle')
+  const driverByVehicle = new Map(assigned.map((d) => [String(d.assignedVehicle), { id: d.id as string, name: d.name, phone: d.phone }]))
+
   const items = await Promise.all(
     vehicles.map(async (vehicle) => {
       const ownerLabel = await ownerLabelFor(vehicle.ownerModel, vehicle.ownerId)
-      return { ...vehicle.toJSON(), ownerLabel }
+      return { ...vehicle.toJSON(), ownerLabel, assignedDriver: driverByVehicle.get(String(vehicle._id)) ?? null }
     }),
   )
 
@@ -138,4 +142,55 @@ export async function updateVehicle(req: Request, res: Response) {
   )
 
   res.json(vehicle)
+}
+
+// Matches a vehicle with the driver who drives it (or clears the match with driverId: null).
+// A vehicle has at most one driver and a driver at most one vehicle.
+export async function assignVehicleDriver(req: Request, res: Response) {
+  const vehicle = await Vehicle.findById(req.params.id)
+  if (!vehicle) {
+    res.status(404).json({ message: 'Vehicle not found' })
+    return
+  }
+
+  const { driverId } = req.body as { driverId?: string | null }
+  if (driverId === undefined || (driverId !== null && !Types.ObjectId.isValid(driverId))) {
+    res.status(400).json({ message: 'driverId must be a driver id, or null to unassign' })
+    return
+  }
+
+  if (driverId === null) {
+    await Driver.updateMany({ assignedVehicle: vehicle._id }, { $set: { assignedVehicle: null } })
+    await recordAudit(req.admin!, 'vehicle.driver_unassigned', 'Vehicle', vehicle.registrationNumber)
+    res.json({ ...vehicle.toJSON(), assignedDriver: null })
+    return
+  }
+
+  const driver = await Driver.findById(driverId)
+  if (!driver) {
+    res.status(404).json({ message: 'Driver not found' })
+    return
+  }
+  if (vehicle.status !== 'active') {
+    res.status(409).json({ message: 'Only an active vehicle can be assigned' })
+    return
+  }
+  if (driver.status !== 'active' || driver.approvalStatus !== 'verified') {
+    res.status(409).json({ message: 'Only an active, verified driver can be assigned a vehicle' })
+    return
+  }
+  const partnerId = driver.onboarding?.partner
+  if (vehicle.ownerType === 'partner' && partnerId && String(partnerId) !== String(vehicle.ownerId)) {
+    res.status(409).json({ message: 'This driver belongs to a different transport partner' })
+    return
+  }
+
+  await Driver.updateMany({ assignedVehicle: vehicle._id, _id: { $ne: driver._id } }, { $set: { assignedVehicle: null } })
+  driver.assignedVehicle = vehicle._id
+  await driver.save()
+
+  await recordAudit(req.admin!, 'vehicle.driver_assigned', 'Vehicle', vehicle.registrationNumber, {
+    driver: `${driver.name} (${driver.phone})`,
+  })
+  res.json({ ...vehicle.toJSON(), assignedDriver: { id: driver.id as string, name: driver.name, phone: driver.phone } })
 }

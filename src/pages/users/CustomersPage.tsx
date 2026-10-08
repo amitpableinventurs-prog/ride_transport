@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
-import { fetchCustomers, updateCustomerStatus } from '@/api/customers'
+import { ChevronLeft, ChevronRight, Eye, Search } from 'lucide-react'
+import { fetchCustomers, updateCustomer } from '@/api/customers'
 import type { Customer, UserStatus } from '@/types/entities'
+import { CustomerDetailModal } from './CustomerDetailModal'
 import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
@@ -22,6 +23,7 @@ export function CustomersPage() {
   const [statusFilter, setStatusFilter] = useState<UserStatus | ''>('')
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<Customer | null>(null)
 
   async function load() {
     const data = await fetchCustomers({ page, limit: LIMIT, q: q || undefined, status: statusFilter || undefined })
@@ -40,7 +42,7 @@ export function CustomersPage() {
   async function changeStatus(customer: Customer, status: UserStatus) {
     setBusyId(customer.id)
     try {
-      const updated = await updateCustomerStatus(customer.id, status)
+      const updated = await updateCustomer(customer.id, { status })
       setCustomers((prev) => prev!.map((c) => (c.id === customer.id ? updated : c)))
     } catch (err) {
       setError((err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Action failed')
@@ -102,12 +104,13 @@ export function CustomersPage() {
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium">Bookings</th>
                   <th className="px-5 py-3 font-medium">Rating</th>
+                  <th className="px-5 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {customers.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-8 text-center text-navy-300">
+                    <td colSpan={7} className="px-5 py-8 text-center text-navy-300">
                       No customers found.
                     </td>
                   </tr>
@@ -115,7 +118,9 @@ export function CustomersPage() {
                 {customers.map((customer) => (
                   <tr key={customer.id} className="border-b border-navy-50 last:border-0">
                     <td className="px-5 py-3">
-                      <p className="font-medium text-navy-800">{customer.name}</p>
+                      <button onClick={() => setViewing(customer)} className="text-left font-medium text-navy-800 hover:text-brand-orange hover:underline">
+                        {customer.name || 'No name yet'}
+                      </button>
                       <p className="text-xs text-navy-300">{customer.email}</p>
                     </td>
                     <td className="px-5 py-3 text-navy-600">{customer.phone}</td>
@@ -139,6 +144,14 @@ export function CustomersPage() {
                     </td>
                     <td className="px-5 py-3 text-navy-600">{customer.totalBookings}</td>
                     <td className="px-5 py-3 text-navy-600">{customer.rating.toFixed(1)}</td>
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        onClick={() => setViewing(customer)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-600 hover:bg-navy-50"
+                      >
+                        <Eye size={13} /> View
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -167,6 +180,17 @@ export function CustomersPage() {
             </div>
           </div>
         </>
+      )}
+
+      {viewing && (
+        <CustomerDetailModal
+          customer={viewing}
+          onClose={() => setViewing(null)}
+          onUpdated={(updated) => {
+            setViewing(updated)
+            setCustomers((prev) => prev!.map((c) => (c.id === updated.id ? updated : c)))
+          }}
+        />
       )}
     </div>
   )

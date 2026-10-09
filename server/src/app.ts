@@ -9,7 +9,7 @@ import adminRoutes from './routes'
 import appRoutes from './routes/app'
 import customerRoutes from './routes/app/customer.routes'
 import riderRoutes from './routes/app/rider.routes'
-import { commonRouter, publicRouter } from './routes/app/common.routes'
+import { commonRouter, legalPagesRouter, publicRouter } from './routes/app/common.routes'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler'
 import { apiLimiter, noStore, sanitizeRequest } from './middleware/security'
 import { overloadGuard, overloadStats, requestTimeout } from './middleware/overload'
@@ -57,6 +57,8 @@ app.use('/api/v1/rider', riderRoutes)
 app.use('/api/v1/common', commonRouter)
 app.use('/api/v1/public', publicRouter)
 app.use('/api/v1/app', appRoutes)
+// Terms and privacy web pages for the store listings: /terms, /privacy, /rider-terms.
+app.use(apiLimiter, legalPagesRouter)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

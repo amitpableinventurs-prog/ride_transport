@@ -1019,6 +1019,13 @@ Parameters:
 
 Responses: 200, 404
 
+**Web pages (not under `/api/v1`):** the same CMS text is also served as a public HTML page at the site root, for the Play Store / App Store privacy-policy link and in-app web views:
+- `GET /terms` — Terms & Conditions (`terms`)
+- `GET /privacy` — Privacy Policy (`privacy`)
+- `GET /rider-terms` — Rider Terms (`rider_terms`)
+
+Example: `https://<PUBLIC_BASE_URL>/privacy`. Returns 404 while the page has no content.
+
 #### `POST /common/devices` — Register an FCM token
 
 Auth: Bearer token

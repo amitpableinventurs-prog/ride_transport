@@ -39,6 +39,74 @@ export async function getCmsPage(req: Request, res: Response) {
   res.json(page)
 }
 
+/** Public web addresses of the legal pages (Play Store / App Store listings link to these) and their CMS slugs. */
+export const LEGAL_PAGE_PATHS = { '/terms': 'terms', '/privacy': 'privacy', '/rider-terms': 'rider_terms' } as const
+
+function escapeHtml(text: string) {
+  return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+}
+
+function legalPageHtml(opts: { title: string; platformName: string; body: string; footer: string }) {
+  const title = escapeHtml(opts.title)
+  const platformName = escapeHtml(opts.platformName)
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title} · ${platformName}</title>
+<style>
+  :root { color-scheme: light dark; --bg: #ffffff; --text: #1f2328; --muted: #656d76; --rule: #d8dee4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --text: #e6edf3; --muted: #8d96a0; --rule: #30363d; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+  .brand { color: var(--muted); font-size: 14px; font-weight: 600; letter-spacing: .02em; }
+  h1 { font-size: 28px; line-height: 1.25; margin: 6px 0 4px; }
+  .updated { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+  p { margin: 0 0 16px; white-space: pre-line; overflow-wrap: anywhere; }
+  footer { border-top: 1px solid var(--rule); margin-top: 32px; padding-top: 16px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+<div class="brand">${platformName}</div>
+<h1>${title}</h1>
+${opts.body}
+<footer>${opts.footer}</footer>
+</main>
+</body>
+</html>`
+}
+
+// GET /terms, /privacy, /rider-terms: the CMS page as a web page (no login), for store listings and in-app web views.
+export async function legalPage(req: Request, res: Response) {
+  const slug = LEGAL_PAGE_PATHS[req.path as keyof typeof LEGAL_PAGE_PATHS]
+  const [page, settings] = await Promise.all([CmsPage.findOne({ slug }).select('title content updatedAt'), getPlatformSettings()])
+  const content = page?.content.trim()
+  const footer = `Questions? Contact ${escapeHtml(settings.supportEmail)} · ${escapeHtml(settings.supportPhone)}`
+
+  res.type('html').setHeader('Cache-Control', 'public, max-age=300')
+  if (!page || !content) {
+    res.status(404).send(legalPageHtml({ title: 'Page not available', platformName: settings.platformName, body: '<p>This page has not been published yet.</p>', footer }))
+    return
+  }
+
+  // Content is plain text from the admin panel: blank lines separate paragraphs.
+  const paragraphs = content
+    .split(/\n\s*\n/)
+    .map((p) => `<p>${escapeHtml(p.trim())}</p>`)
+    .join('\n')
+  const updated = page.updatedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  res.send(
+    legalPageHtml({
+      title: page.title,
+      platformName: settings.platformName,
+      body: `<p class="updated">Last updated ${escapeHtml(updated)}</p>\n${paragraphs}`,
+      footer,
+    }),
+  )
+}
+
 // POST /common/devices: register (or move) an FCM token to the logged-in user.
 export async function registerDevice(req: Request, res: Response) {
   const user = req.appUser!

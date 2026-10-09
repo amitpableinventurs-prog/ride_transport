@@ -12,3 +12,7 @@ commonRouter.post('/devices', requireAppAuth, common.registerDevice)
 export const publicRouter = Router()
 publicRouter.get('/track/:token', common.publicTrack)
 publicRouter.get('/invoices/:token', common.publicInvoice)
+
+// Terms and privacy as web pages at the site root (/terms, /privacy, /rider-terms).
+export const legalPagesRouter = Router()
+legalPagesRouter.get(Object.keys(common.LEGAL_PAGE_PATHS), common.legalPage)

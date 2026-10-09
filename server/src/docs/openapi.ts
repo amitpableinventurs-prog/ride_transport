@@ -53,7 +53,7 @@ interface OpOptions {
   body?: Schema
   bodyRequired?: boolean
   response?: Schema
-  status?: 200 | 201 | 204
+  status?: 200 | 201 | 202 | 204
   errors?: number[]
   auth?: boolean
   /** Mobile-app endpoint: secured with the app token instead of the admin token. */
@@ -585,7 +585,7 @@ const customerPaths = {
   '/offers': { get: appOp('Customer', 'Active coupons and banners') },
   ...supportPaths('Customer'),
   '/account': {
-    delete: appOp('Customer', 'Request account deletion', { body: obj({ reason: str() }), bodyRequired: false, errors: [409] }),
+    delete: appOp('Customer', 'Request account deletion', { body: obj({ reason: str() }), bodyRequired: false, status: 202, errors: [409] }),
   },
 }
 
@@ -617,9 +617,9 @@ const riderPaths = {
   '/auth/logout': {
     post: appOp('Rider', 'Rider logout: revoke the refresh token and remove the FCM token', { body: obj({ refreshToken: str(), fcmToken: str() }), bodyRequired: false, status: 204 }),
   },
-  '/auth/me': { get: appOp('Rider', 'Logged-in rider (same as GET /profile)', { response: ref('AppUser') }) },
+  '/auth/me': { get: appOp('Rider', 'Logged-in rider (same as GET /profile)', { response: ref('RiderProfile') }) },
   '/profile': {
-    get: appOp('Rider', 'Get profile', { response: ref('AppUser') }),
+    get: appOp('Rider', 'My Profile screen: account, stats (rating / orders / years), vehicle and ID card', { response: ref('RiderProfile') }),
     patch: multipart(appOp('Rider', 'Update profile', { description: 'Same fields as the customer profile.', response: ref('AppUser'), errors: [400] }), { name: str(), photo: binary('JPEG/PNG/WebP up to 5 MB') }, []),
   },
   '/onboarding/options': { get: appOp('Rider', 'Licence choices, vehicle types, services and document types for onboarding') },
@@ -695,6 +695,51 @@ const riderPaths = {
     ),
   },
   '/approval-status': { get: appOp('Rider', 'pending, under_review, approved or rejected + reasons') },
+  '/performance': {
+    get: appOp('Rider', 'Performance screen: trips, earnings and rating for the last N days + lifetime acceptance / cancellation rates', {
+      parameters: [query('days', 'Period in days, 1 to 90 (default 7)', int({ example: 7 }))],
+      response: obj({
+        days: int({ example: 7 }),
+        from: date(),
+        period: obj({
+          trips: int(),
+          earnings: num({ example: 1250.5 }),
+          distanceKm: num(),
+          rating: { type: 'number', nullable: true, example: 4.6, description: 'null when no ratings in the period' },
+          ratingCount: int(),
+        }),
+        lifetime: obj({
+          rating: num({ example: 4.8 }),
+          orders: int(),
+          cancellations: int(),
+          acceptanceRate: { type: 'number', nullable: true, example: 92.5, description: 'Percent of offers accepted; null before the first offer' },
+          cancellationRate: { type: 'number', nullable: true, example: 3.1, description: 'Percent of accepted trips the rider cancelled' },
+        }),
+      }),
+    }),
+  },
+  '/ratings': {
+    get: appOp('Rider', 'Ratings from customers ("RATING >"): average, star breakdown and comments', {
+      parameters: pageParams,
+      response: obj({
+        average: num({ example: 4.8 }),
+        total: int(),
+        breakdown: obj({ '5': int(), '4': int(), '3': int(), '2': int(), '1': int() }),
+        items: arr(obj({ id: oid(), score: int({ example: 5 }), comment: { type: 'string', nullable: true }, bookingCode: str({ example: 'BK-10212' }), createdAt: date() })),
+        page: int(),
+        limit: int(),
+      }),
+    }),
+  },
+  '/account': {
+    delete: appOp('Rider', 'Delete Account: request account deletion', {
+      description: 'Records the request and takes the rider offline; an admin completes it within 7 days. `409` during an ongoing trip or while wallet dues are unpaid.',
+      body: obj({ reason: str({ maxLength: 500 }) }),
+      bodyRequired: false,
+      status: 202,
+      errors: [409],
+    }),
+  },
   '/duty/online': {
     post: appOp('Rider', 'Go online', {
       description: '`403` not approved · `428` selfie due (`selfieRequired: true`) · `402` cash dues above `maxCashDues` · `409` no active vehicle.',
@@ -961,6 +1006,54 @@ export const openApiSpec = {
           dateOfBirth: date({ example: '1995-08-14T00:00:00.000Z', description: 'customer / driver (UTC midnight of the date)' }),
           emergencyContact: ref('EmergencyContact'),
           profileComplete: bool({ description: 'false → show the Profile screen' }),
+        },
+        additionalProperties: true,
+      },
+      RiderProfile: {
+        type: 'object',
+        description: 'The rider (Driver) record plus the My Profile screen data.',
+        properties: {
+          id: oid(),
+          userType: enumOf(['driver']),
+          name: str({ example: 'Nikhil Sajjan' }),
+          phone: str({ example: '+919876543210' }),
+          email: str(),
+          photoUrl: str({ example: '/uploads/profile/9d46e9e2.jpg', description: 'Path on this server; prefix the API base URL' }),
+          gender: enumOf(GENDERS),
+          dateOfBirth: date({ example: '1995-08-14T00:00:00.000Z' }),
+          emergencyContact: ref('EmergencyContact'),
+          language: str({ example: 'en' }),
+          serviceType: enumOf(['rider', 'transport']),
+          status: enumOf(ACCOUNT_STATUS),
+          approvalStatus: enumOf(['pending', 'verified', 'rejected']),
+          onlineStatus: enumOf(['offline', 'online', 'busy', 'on_trip']),
+          profileComplete: bool(),
+          riderCode: str({ example: 'AZRB3F3E3', description: 'Rider ID shown on the ID card' }),
+          stats: obj({
+            rating: num({ example: 4.8, description: '0 with ratingCount 0 = not rated yet (show --)' }),
+            ratingCount: int({ example: 120 }),
+            orders: int({ example: 340, description: 'Completed trips' }),
+            yearsOnPlatform: num({ example: 1.3 }),
+            memberSince: date(),
+          }),
+          vehicle: {
+            ...obj({ id: oid(), registrationNumber: str({ example: 'MH12AB1234' }), model: str({ example: 'Honda Activa' }), manufacturer: str({ example: 'Honda' }), vehicleType: str({ example: 'Bike' }), serviceMode: enumOf(['ride', 'transport']) }),
+            nullable: true,
+            description: 'Current active vehicle; null when none',
+          },
+          partner: { ...obj({ id: oid(), companyName: str() }), nullable: true, description: 'Set when the rider joined through a transport partner' },
+          idCard: obj({
+            riderCode: str({ example: 'AZRB3F3E3' }),
+            name: str(),
+            phone: str(),
+            photoUrl: { type: 'string', nullable: true },
+            services: arr(str({ example: 'bike' })),
+            vehicleNumber: { type: 'string', nullable: true, example: 'MH12AB1234' },
+            vehicleType: { type: 'string', nullable: true, example: 'Bike' },
+            partnerName: { type: 'string', nullable: true },
+            memberSince: date(),
+            verified: bool(),
+          }),
         },
         additionalProperties: true,
       },

@@ -40,6 +40,9 @@ const driverSchema = new Schema(
     totalTrips: { type: Number, default: 0 },
     cancellations: { type: Number, default: 0 },
     earnings: { type: Number, default: 0 },
+    // Set by DELETE /rider/account; an admin completes the deletion.
+    deletionRequestedAt: { type: Date },
+    deletionReason: { type: String },
   },
   { timestamps: true, toJSON: idToJson },
 )

@@ -1,10 +1,11 @@
 // Rider app: onboarding, documents, vehicle, approval and duty status.
 import type { Request, Response } from 'express'
-import type { HydratedDocument } from 'mongoose'
-import { Booking } from '../../models/Booking'
+import { Types, type HydratedDocument } from 'mongoose'
+import { Booking, OPEN_BOOKING_STATUSES } from '../../models/Booking'
 import { DocumentRecord } from '../../models/Document'
 import type { DriverDocument } from '../../models/Driver'
 import { IncentiveScheme } from '../../models/IncentiveScheme'
+import { Rating } from '../../models/Rating'
 import { ServiceCategory } from '../../models/ServiceCategory'
 import { TransportPartner } from '../../models/TransportPartner'
 import { Vehicle } from '../../models/Vehicle'
@@ -13,8 +14,9 @@ import { Driver } from '../../models/Driver'
 import { removeLiveRider } from '../../realtime/socket'
 import { rejectOffer } from '../../services/dispatch'
 import { activeVehicleFor } from '../../services/trips'
+import { serializeAppUser } from '../../utils/appUsers'
 import { findServiceArea, haversineKm, parseLatLng } from '../../utils/geo'
-import { HttpError, optionalString, parseDate, requireObjectId, requireString } from '../../utils/http'
+import { HttpError, optionalString, parseDate, parsePagination, requireObjectId, requireString } from '../../utils/http'
 import { getPlatformSettings } from '../../utils/settings'
 import { uploadedFileUrl } from '../../utils/uploads'
 import { getOrCreateWallet } from '../../utils/wallet'
@@ -471,4 +473,168 @@ export async function getHeatmap(req: Request, res: Response) {
     .map((c) => ({ ...c, level: c.demand >= 2 * Math.max(1, c.supply) ? 'high' : c.demand > c.supply ? 'medium' : 'low' }))
     .sort((a, b) => b.demand - a.demand)
   res.json({ center, radiusKm: HEATMAP_RADIUS_KM, windowMinutes: HEATMAP_WINDOW_MIN, zones })
+}
+
+// ---------- Profile screen ----------
+
+const DAY_MS = 86_400_000
+const oneDecimal = (n: number) => Math.round(n * 10) / 10
+
+/** Rider ID printed on the ID card: AZR + the last 6 characters of the account id. */
+function riderCode(driver: DriverDoc) {
+  return `AZR${driver.id.slice(-6).toUpperCase()}`
+}
+
+// GET /profile and /auth/me: the account plus what the My Profile screen shows
+// (rating, orders, years with us), the current vehicle and the ID card details.
+export async function getProfile(req: Request, res: Response) {
+  const driver = driverDoc(req)
+  const [ratingCount, vehicle, partner] = await Promise.all([
+    Rating.countDocuments({ driver: driver._id, ratedBy: 'customer' }),
+    activeVehicleFor(driver._id, driver.assignedVehicle).then((v) =>
+      v ? v.populate<{ vehicleType: { name: string } | null }>('vehicleType', 'name') : null,
+    ),
+    driver.onboarding?.partner ? TransportPartner.findById(driver.onboarding.partner).select('companyName') : null,
+  ])
+  const vehicleInfo = vehicle
+    ? {
+        id: vehicle.id as string,
+        registrationNumber: vehicle.registrationNumber,
+        model: vehicle.model,
+        manufacturer: vehicle.manufacturer ?? null,
+        vehicleType: vehicle.vehicleType?.name ?? null,
+        serviceMode: vehicle.serviceMode,
+      }
+    : null
+
+  res.json({
+    ...serializeAppUser(req.appUser!),
+    riderCode: riderCode(driver),
+    stats: {
+      // rating 0 with ratingCount 0 means "not rated yet" (the app shows --).
+      rating: oneDecimal(driver.rating),
+      ratingCount,
+      orders: driver.totalTrips,
+      yearsOnPlatform: Math.floor(((Date.now() - driver.createdAt.getTime()) / (365.25 * DAY_MS)) * 10) / 10,
+      memberSince: driver.createdAt,
+    },
+    vehicle: vehicleInfo,
+    partner: partner ? { id: partner.id, companyName: partner.companyName } : null,
+    idCard: {
+      riderCode: riderCode(driver),
+      name: driver.name,
+      phone: driver.phone,
+      photoUrl: driver.photoUrl ?? null,
+      services: driver.onboarding?.services ?? [],
+      vehicleNumber: vehicleInfo?.registrationNumber ?? null,
+      vehicleType: vehicleInfo?.vehicleType ?? null,
+      partnerName: partner?.companyName ?? null,
+      memberSince: driver.createdAt,
+      verified: driver.approvalStatus === 'verified',
+    },
+  })
+}
+
+// GET /performance?days=7: trips, earnings and ratings for the period, plus lifetime acceptance and cancellation rates.
+export async function getPerformance(req: Request, res: Response) {
+  const driver = driverDoc(req)
+  const days = Math.min(90, Math.max(1, parseInt(String(req.query.days ?? '7'), 10) || 7))
+  const from = new Date(Date.now() - days * DAY_MS)
+  const driverId = new Types.ObjectId(driver.id)
+
+  const [period, periodRatings, assigned, declinedOrCancelled] = await Promise.all([
+    Booking.aggregate<{ trips: number; earnings: number; distanceKm: number }>([
+      { $match: { driver: driverId, status: 'completed', completedAt: { $gte: from } } },
+      {
+        $group: {
+          _id: null,
+          trips: { $sum: 1 },
+          earnings: { $sum: { $ifNull: ['$settlement.riderEarning', 0] } },
+          distanceKm: { $sum: { $ifNull: ['$distanceKm', 0] } },
+        },
+      },
+    ]),
+    Rating.aggregate<{ avg: number; count: number }>([
+      { $match: { driver: driverId, ratedBy: 'customer', createdAt: { $gte: from } } },
+      { $group: { _id: null, avg: { $avg: '$score' }, count: { $sum: 1 } } },
+    ]),
+    Booking.countDocuments({ driver: driverId }),
+    Booking.countDocuments({ rejectedBy: driverId }),
+  ])
+
+  // rejectedBy holds declined and timed-out offers plus the trips the rider cancelled after accepting.
+  const accepted = assigned + driver.cancellations
+  // Every rider cancellation is also in rejectedBy; max() keeps older or imported data from going over 100%.
+  const offers = assigned + Math.max(declinedOrCancelled, driver.cancellations)
+  const percent = (part: number, whole: number) => (whole ? Math.round((part / whole) * 1000) / 10 : null)
+  const p = period[0]
+  const r = periodRatings[0]
+
+  res.json({
+    days,
+    from,
+    period: {
+      trips: p?.trips ?? 0,
+      earnings: Math.round((p?.earnings ?? 0) * 100) / 100,
+      distanceKm: Math.round((p?.distanceKm ?? 0) * 10) / 10,
+      rating: r ? Math.round(r.avg * 10) / 10 : null,
+      ratingCount: r?.count ?? 0,
+    },
+    lifetime: {
+      rating: oneDecimal(driver.rating),
+      orders: driver.totalTrips,
+      cancellations: driver.cancellations,
+      // null until the rider has had an offer / accepted a trip.
+      acceptanceRate: percent(accepted, offers),
+      cancellationRate: percent(driver.cancellations, accepted),
+    },
+  })
+}
+
+// GET /ratings?page=&limit=: what customers rated this rider ("RATING >" on the profile screen).
+export async function listRatings(req: Request, res: Response) {
+  const driver = driverDoc(req)
+  const { page, limit, skip } = parsePagination(req)
+  const filter = { driver: driver._id, ratedBy: 'customer' }
+  const [items, total, breakdown] = await Promise.all([
+    Rating.find(filter)
+      .select('score comment booking createdAt')
+      .populate<{ booking: { bookingCode?: string } | null }>('booking', 'bookingCode')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Rating.countDocuments(filter),
+    Rating.aggregate<{ _id: number; count: number }>([{ $match: filter }, { $group: { _id: '$score', count: { $sum: 1 } } }]),
+  ])
+  res.json({
+    average: oneDecimal(driver.rating),
+    total,
+    breakdown: Object.fromEntries([5, 4, 3, 2, 1].map((s) => [s, breakdown.find((b) => b._id === s)?.count ?? 0])),
+    items: items.map((r) => ({
+      id: r.id,
+      score: r.score,
+      comment: r.comment ?? null,
+      bookingCode: r.booking?.bookingCode ?? null,
+      createdAt: r.createdAt,
+    })),
+    page,
+    limit,
+  })
+}
+
+// DELETE /account { reason? }: the Delete Account button. Records the request; an admin completes the deletion.
+export async function requestAccountDeletion(req: Request, res: Response) {
+  const driver = driverDoc(req)
+  const open = await Booking.exists({ driver: driver._id, status: { $in: [...OPEN_BOOKING_STATUSES, 'scheduled'] } })
+  if (open) throw new HttpError(409, 'Finish your current trip before deleting your account')
+  const wallet = await getOrCreateWallet('driver', driver._id)
+  if (wallet.balance < 0) throw new HttpError(409, `Clear your dues of ₹${Math.abs(wallet.balance).toFixed(2)} before deleting your account`)
+
+  driver.set({ deletionRequestedAt: new Date(), deletionReason: optionalString((req.body ?? {}).reason, 500), onlineStatus: 'offline' })
+  await driver.save()
+  removeLiveRider(driver._id)
+  // Pass on any request currently offered to this rider.
+  const offered = await Booking.find({ status: 'requested', 'offer.driver': driver._id }).select('_id')
+  await Promise.all(offered.map((b) => rejectOffer(b.id, driver.id)))
+  res.status(202).json({ message: 'Your account deletion request has been received. It will be completed within 7 days.' })
 }

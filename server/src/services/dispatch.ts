@@ -142,6 +142,8 @@ export async function offerNext(bookingId: string): Promise<void> {
     title: 'New booking request',
     body: `${offered.mode === 'ride' ? 'Ride' : 'Delivery'} pickup ${candidate.distanceKm.toFixed(1)} km away`,
     data: { bookingId, type: 'booking_request' },
+    // A late push for an expired offer is useless.
+    ttlSeconds: settings.riderRequestTimeoutSeconds,
   })
 }
 

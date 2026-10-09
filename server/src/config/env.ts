@@ -73,8 +73,12 @@ export const env = {
   paymentProvider: process.env.PAYMENT_PROVIDER ?? 'mock',
   razorpayKeyId: process.env.RAZORPAY_KEY_ID ?? '',
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
-  // Push notifications: "console" prints them. Add FCM in src/utils/push.ts.
+  // Push notifications: "console" prints them, "fcm" sends through Firebase (src/utils/fcm.ts).
   pushProvider: process.env.PUSH_PROVIDER ?? 'console',
+  // The customer and rider apps are separate Firebase projects: one service account key each,
+  // as a path to the JSON file or the JSON itself.
+  fcmCustomerServiceAccount: process.env.FIREBASE_CUSTOMER_SERVICE_ACCOUNT ?? '',
+  fcmRiderServiceAccount: process.env.FIREBASE_RIDER_SERVICE_ACCOUNT ?? '',
   // Masked calling: "direct" returns the real number (development only). Add Exotel etc. in src/utils/telephony.ts.
   telephonyProvider: process.env.TELEPHONY_PROVIDER ?? 'direct',
 

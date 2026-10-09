@@ -1,7 +1,10 @@
 import type { Request, Response } from 'express'
 import { NotificationTemplate } from '../models/NotificationTemplate'
 import { NotificationBroadcast } from '../models/NotificationBroadcast'
+import { Device } from '../models/Device'
+import { Driver } from '../models/Driver'
 import { recordAudit } from '../utils/audit'
+import { pushToTokens } from '../utils/notify'
 
 const TEMPLATE_FIELDS = ['key', 'channel', 'title', 'body', 'status'] as const
 
@@ -51,6 +54,21 @@ const AUDIENCE_BASE_ESTIMATE: Record<string, number> = {
   custom: 300,
 }
 
+// Push broadcasts that reach real devices; other audiences / channels are recorded with an estimate.
+const PUSH_AUDIENCE_USER_TYPE = { all_customers: 'customer', all_drivers: 'driver' } as const
+
+/** Device tokens a push broadcast goes to; null when the audience is not sent as push. */
+async function broadcastTokens(audience: string, serviceModeFilter: string): Promise<{ userType: 'customer' | 'driver'; tokens: string[] } | null> {
+  const userType = PUSH_AUDIENCE_USER_TYPE[audience as keyof typeof PUSH_AUDIENCE_USER_TYPE]
+  if (!userType) return null
+  const filter: Record<string, unknown> = { userType }
+  // Riders can be limited to ride or delivery (transport) riders.
+  if (userType === 'driver' && (serviceModeFilter === 'ride' || serviceModeFilter === 'transport')) {
+    filter.userId = { $in: await Driver.find({ serviceType: serviceModeFilter === 'ride' ? 'rider' : 'transport' }).distinct('_id') }
+  }
+  return { userType, tokens: await Device.find(filter).distinct('token') }
+}
+
 export async function listBroadcasts(_req: Request, res: Response) {
   const broadcasts = await NotificationBroadcast.find().populate('template', 'key channel').sort({ createdAt: -1 })
   res.json(broadcasts)
@@ -71,14 +89,16 @@ export async function createBroadcast(req: Request, res: Response) {
     return
   }
 
+  const serviceModeFilter = body.serviceModeFilter ?? 'both'
+  const push = body.channel === 'push' ? await broadcastTokens(body.audience, serviceModeFilter) : null
   const base = AUDIENCE_BASE_ESTIMATE[body.audience] ?? 500
-  const recipientCountEstimate = base + Math.floor(Math.random() * base * 0.5)
+  const recipientCountEstimate = push ? push.tokens.length : base + Math.floor(Math.random() * base * 0.5)
 
   const broadcast = await NotificationBroadcast.create({
     template: body.templateId || null,
     channel: body.channel,
     audience: body.audience,
-    serviceModeFilter: body.serviceModeFilter ?? 'both',
+    serviceModeFilter,
     title: body.title,
     body: body.body,
     sentBy: req.admin!.id,
@@ -90,6 +110,12 @@ export async function createBroadcast(req: Request, res: Response) {
     channel: broadcast.channel,
     recipientCountEstimate,
   })
+
+  // Sent after answering: a large audience takes a while, and the apps also show it in their notification list.
+  if (push?.tokens.length) {
+    const message = { title: broadcast.title, body: broadcast.body, data: { type: 'announcement', broadcastId: broadcast.id as string } }
+    void pushToTokens(push.userType, push.tokens, message).catch((err) => console.error('[broadcast] push failed', err))
+  }
 
   const populated = await broadcast.populate('template', 'key channel')
   res.status(201).json(populated)

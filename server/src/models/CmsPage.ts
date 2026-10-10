@@ -6,7 +6,7 @@ const cmsPageSchema = new Schema(
       type: String,
       required: true,
       unique: true,
-      enum: ['about', 'contact', 'terms', 'privacy', 'cancellation', 'refund', 'rider_terms', 'partner_terms', 'faq'],
+      enum: ['about', 'contact', 'terms', 'privacy', 'cancellation', 'refund', 'rider_terms', 'rider_privacy', 'partner_terms', 'faq'],
     },
     title: { type: String, required: true },
     content: { type: String, default: '' },

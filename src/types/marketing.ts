@@ -58,7 +58,7 @@ export interface Banner {
   updatedAt: string
 }
 
-export type CmsSlug = 'about' | 'contact' | 'terms' | 'privacy' | 'cancellation' | 'refund' | 'rider_terms' | 'partner_terms' | 'faq'
+export type CmsSlug = 'about' | 'contact' | 'terms' | 'privacy' | 'cancellation' | 'refund' | 'rider_terms' | 'rider_privacy' | 'partner_terms' | 'faq'
 
 export interface CmsPage {
   id: string

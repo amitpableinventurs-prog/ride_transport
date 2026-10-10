@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import * as account from '../../controllers/customer/account.controller'
+import * as common from '../../controllers/common/common.controller'
 import * as home from '../../controllers/customer/home.controller'
 import * as bookings from '../../controllers/customer/bookings.controller'
 import * as payments from '../../controllers/customer/payments.controller'
@@ -12,6 +13,10 @@ import { env } from '../../config/env'
 
 // SRS §10.2 customer app, mounted at /api/v1/customer.
 const router = Router()
+
+// Terms and privacy policy: no login, so they can be shown on the sign-up screen.
+router.get('/terms', common.appLegalPage('customer', 'terms'))
+router.get('/privacy-policy', common.appLegalPage('customer', 'privacy'))
 
 router.use(rejectDuringMaintenance, requireAppAuth, requireAppUserType('customer'), perUserLimiter(env.appUserRateLimit))
 

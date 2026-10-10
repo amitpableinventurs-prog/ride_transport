@@ -8,6 +8,7 @@ import { Device } from '../../models/Device'
 import { Driver } from '../../models/Driver'
 import { ServiceCategory } from '../../models/ServiceCategory'
 import { Vehicle } from '../../models/Vehicle'
+import { env } from '../../config/env'
 import { HttpError, optionalString, requireString } from '../../utils/http'
 import { verifyInvoiceToken } from '../../utils/jwt'
 import { getPlatformSettings } from '../../utils/settings'
@@ -40,7 +41,25 @@ export async function getCmsPage(req: Request, res: Response) {
 }
 
 /** Public web addresses of the legal pages (Play Store / App Store listings link to these) and their CMS slugs. */
-export const LEGAL_PAGE_PATHS = { '/terms': 'terms', '/privacy': 'privacy', '/rider-terms': 'rider_terms' } as const
+export const LEGAL_PAGE_PATHS = { '/terms': 'terms', '/privacy': 'privacy', '/rider-terms': 'rider_terms', '/rider-privacy': 'rider_privacy' } as const
+
+/** CMS slug of each app's terms and privacy policy. */
+const APP_LEGAL_SLUGS = {
+  customer: { terms: 'terms', privacy: 'privacy' },
+  rider: { terms: 'rider_terms', privacy: 'rider_privacy' },
+} as const
+const WEB_PATH_FOR_SLUG = Object.fromEntries(Object.entries(LEGAL_PAGE_PATHS).map(([webPath, slug]) => [slug, webPath]))
+
+// GET /customer/terms, /customer/privacy-policy, /rider/terms, /rider/privacy-policy: no login,
+// so the apps can show them on the sign-up screen. `url` is the same page as a web page.
+export function appLegalPage(app: keyof typeof APP_LEGAL_SLUGS, page: 'terms' | 'privacy') {
+  const slug = APP_LEGAL_SLUGS[app][page]
+  return async (_req: Request, res: Response) => {
+    const doc = await CmsPage.findOne({ slug }).select('title content updatedAt')
+    if (!doc || !doc.content.trim()) throw new HttpError(404, 'This page has not been published yet')
+    res.json({ app, page, slug, title: doc.title, content: doc.content, updatedAt: doc.updatedAt, url: `${env.publicBaseUrl}${WEB_PATH_FOR_SLUG[slug]}` })
+  }
+}
 
 function escapeHtml(text: string) {
   return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)

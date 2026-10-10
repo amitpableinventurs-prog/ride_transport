@@ -2,7 +2,7 @@ import type { Request, Response } from 'express'
 import { CmsPage } from '../models/CmsPage'
 import { recordAudit } from '../utils/audit'
 
-export const CMS_SLUGS = ['about', 'contact', 'terms', 'privacy', 'cancellation', 'refund', 'rider_terms', 'partner_terms', 'faq'] as const
+export const CMS_SLUGS = ['about', 'contact', 'terms', 'privacy', 'cancellation', 'refund', 'rider_terms', 'rider_privacy', 'partner_terms', 'faq'] as const
 export type CmsSlug = (typeof CMS_SLUGS)[number]
 
 const CMS_TITLES: Record<CmsSlug, string> = {
@@ -12,7 +12,8 @@ const CMS_TITLES: Record<CmsSlug, string> = {
   privacy: 'Privacy Policy',
   cancellation: 'Cancellation Policy',
   refund: 'Refund Policy',
-  rider_terms: 'Rider Terms',
+  rider_terms: 'Rider Terms & Conditions',
+  rider_privacy: 'Privacy Policy',
   partner_terms: 'Partner Terms',
   faq: 'FAQ',
 }

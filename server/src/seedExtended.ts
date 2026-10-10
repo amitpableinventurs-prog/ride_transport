@@ -530,7 +530,8 @@ export async function seedExtended() {
     { slug: 'privacy', title: 'Privacy Policy' },
     { slug: 'cancellation', title: 'Cancellation Policy' },
     { slug: 'refund', title: 'Refund Policy' },
-    { slug: 'rider_terms', title: 'Rider Terms' },
+    { slug: 'rider_terms', title: 'Rider Terms & Conditions' },
+    { slug: 'rider_privacy', title: 'Privacy Policy' },
     { slug: 'partner_terms', title: 'Partner Terms' },
     { slug: 'faq', title: 'FAQs' },
   ]

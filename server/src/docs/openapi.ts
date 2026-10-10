@@ -43,7 +43,7 @@ const DOC_STATUS = ['pending', 'verified', 'rejected', 'expired'] as const
 const SERVICE_MODE = ['ride', 'transport'] as const
 const SERVICE_MODE_BOTH = ['ride', 'transport', 'both'] as const
 const BOOKING_STATUS = ['scheduled', 'requested', 'no_rider_found', 'accepted', 'arriving', 'arrived', 'started', 'in_transit', 'completed', 'cancelled'] as const
-const CMS_SLUGS = ['about', 'contact', 'terms', 'privacy', 'cancellation', 'refund', 'rider_terms', 'partner_terms', 'faq'] as const
+const CMS_SLUGS = ['about', 'contact', 'terms', 'privacy', 'cancellation', 'refund', 'rider_terms', 'rider_privacy', 'partner_terms', 'faq'] as const
 const WALLET_REASONS = ['booking_earning', 'booking_payment', 'tip', 'commission', 'recharge', 'refund', 'penalty', 'bonus', 'withdrawal', 'adjustment'] as const
 
 interface OpOptions {
@@ -104,6 +104,23 @@ const reportRange = [
   query('from', 'Start date (ISO). Defaults to 30 days ago.', str({ format: 'date', example: '2026-09-01' })),
   query('to', 'End date (ISO). A date-only value includes the whole day. Defaults to now.', str({ format: 'date', example: '2026-09-24' })),
 ]
+
+// GET /customer|rider/terms and /privacy-policy: the app's CMS page, no login.
+const legalPageOp = (tag: string, app: 'customer' | 'rider', page: 'terms' | 'privacy') =>
+  op(tag, `${page === 'terms' ? 'Terms & Conditions' : 'Privacy Policy'} (${app} app, no login)`, {
+    auth: false,
+    description: 'Text edited in the admin panel (CMS Pages). Plain text: blank lines separate paragraphs. `url` is the same page as a web page. `404` while the page has no content.',
+    response: obj({
+      app: enumOf([app]),
+      page: enumOf([page]),
+      slug: str({ example: app === 'rider' ? `rider_${page}` : page }),
+      title: str({ example: page === 'terms' ? 'Terms & Conditions' : 'Privacy Policy' }),
+      content: str(),
+      updatedAt: date(),
+      url: str({ example: `https://api.example.com/${app === 'rider' ? 'rider-' : ''}${page}` }),
+    }),
+    errors: [404],
+  })
 
 const prefixPaths = (prefix: string, paths: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(paths).map(([path, item]) => [`${prefix}${path}`, item]))
@@ -410,6 +427,8 @@ const onboardingStatusResponse = {
 }
 
 const customerPaths = {
+  '/terms': { get: legalPageOp('Customer', 'customer', 'terms') },
+  '/privacy-policy': { get: legalPageOp('Customer', 'customer', 'privacy') },
   '/profile': {
     get: appOp('Customer', 'Get profile', { response: ref('AppUser') }),
     patch: multipart(
@@ -590,6 +609,8 @@ const customerPaths = {
 }
 
 const riderPaths = {
+  '/terms': { get: legalPageOp('Rider', 'rider', 'terms') },
+  '/privacy-policy': { get: legalPageOp('Rider', 'rider', 'privacy') },
   '/auth/otp/send': {
     post: op('Rider', 'Rider login: send OTP', {
       auth: false,

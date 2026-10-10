@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import * as auth from '../../controllers/app/auth.controller'
+import * as common from '../../controllers/common/common.controller'
 import * as account from '../../controllers/rider/account.controller'
 import * as trips from '../../controllers/rider/trips.controller'
 import * as wallet from '../../controllers/rider/wallet.controller'
@@ -14,6 +15,10 @@ import { env } from '../../config/env'
 
 // SRS §10.3 rider app, mounted at /api/v1/rider. Riders are Driver accounts.
 const router = Router()
+
+// Terms and privacy policy: no login, so they can be shown on the sign-up screen.
+router.get('/terms', common.appLegalPage('rider', 'terms'))
+router.get('/privacy-policy', common.appLegalPage('rider', 'privacy'))
 
 router.use(rejectDuringMaintenance)
 

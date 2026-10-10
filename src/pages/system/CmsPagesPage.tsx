@@ -9,11 +9,12 @@ import { useAuthStore } from '@/store/authStore'
 const CMS_LABELS: Record<CmsSlug, string> = {
   about: 'About Us',
   contact: 'Contact Us',
-  terms: 'Terms & Conditions',
-  privacy: 'Privacy Policy',
+  terms: 'Customer Terms & Conditions',
+  privacy: 'Customer Privacy Policy',
   cancellation: 'Cancellation Policy',
   refund: 'Refund Policy',
-  rider_terms: 'Rider Terms',
+  rider_terms: 'Rider Terms & Conditions',
+  rider_privacy: 'Rider Privacy Policy',
   partner_terms: 'Partner Terms',
   faq: 'FAQ',
 }

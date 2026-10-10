@@ -99,7 +99,8 @@ export interface NotificationBroadcast {
   updatedAt: string
 }
 
-export type TicketCategory = 'payment' | 'booking' | 'driver' | 'vehicle' | 'lost_item' | 'refund' | 'cancellation' | 'technical'
+export type TicketCategory = 'payment' | 'booking' | 'driver' | 'vehicle' | 'lost_item' | 'refund' | 'cancellation' | 'technical' | 'claim'
+export type ClaimType = 'damaged_goods' | 'lost_goods' | 'overcharged' | 'other'
 export type TicketStatus = 'open' | 'assigned' | 'in_progress' | 'resolved' | 'closed'
 export type TicketPriority = 'low' | 'medium' | 'high'
 export type RaisedByType = 'customer' | 'driver' | 'partner'
@@ -116,7 +117,10 @@ export interface Ticket {
   category: TicketCategory
   raisedByType: RaisedByType
   raisedByName: string
+  description?: string
   booking?: string | null
+  /** Customer app claims (category "claim"). */
+  claim?: { type: ClaimType; amount?: number; photos: string[] }
   status: TicketStatus
   assignedTo?: { id: string; name: string; email: string } | string | null
   priority: TicketPriority

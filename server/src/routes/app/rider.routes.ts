@@ -82,6 +82,7 @@ router.get('/heatmap', account.getHeatmap)
 router.post('/sos', support.raiseSos)
 router.get('/tickets', support.listTickets)
 router.post('/tickets', support.createTicket)
+router.get('/tickets/:id', support.getTicket)
 router.get('/notifications', support.listNotifications)
 
 export default router

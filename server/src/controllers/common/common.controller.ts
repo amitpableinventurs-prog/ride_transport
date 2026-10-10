@@ -9,6 +9,7 @@ import { Driver } from '../../models/Driver'
 import { ServiceCategory } from '../../models/ServiceCategory'
 import { Vehicle } from '../../models/Vehicle'
 import { env } from '../../config/env'
+import { APP_LANGUAGES } from '../app/profile.controller'
 import { HttpError, optionalString, requireString } from '../../utils/http'
 import { verifyInvoiceToken } from '../../utils/jwt'
 import { getPlatformSettings } from '../../utils/settings'
@@ -30,6 +31,8 @@ export async function getAppConfig(req: Request, res: Response) {
     support: { phone: s.supportPhone, email: s.supportEmail },
     currency: s.defaultCurrency,
     riderRequestTimeoutSeconds: s.riderRequestTimeoutSeconds,
+    // Language Settings screen; save the choice with PATCH /profile { language }.
+    languages: APP_LANGUAGES.map((code) => ({ code, name: LANGUAGE_NAMES[code] })),
   })
 }
 
@@ -38,6 +41,20 @@ export async function getCmsPage(req: Request, res: Response) {
   const page = await CmsPage.findOne({ slug: req.params.slug }).select('slug title content updatedAt')
   if (!page) throw new HttpError(404, 'Page not found')
   res.json(page)
+}
+
+const LANGUAGE_NAMES: Record<(typeof APP_LANGUAGES)[number], string> = {
+  en: 'English',
+  hi: 'हिन्दी',
+  mr: 'मराठी',
+  gu: 'ગુજરાતી',
+  bn: 'বাংলা',
+  ta: 'தமிழ்',
+  te: 'తెలుగు',
+  kn: 'ಕನ್ನಡ',
+  ml: 'മലയാളം',
+  pa: 'ਪੰਜਾਬੀ',
+  or: 'ଓଡ଼ିଆ',
 }
 
 /** Public web addresses of the legal pages (Play Store / App Store listings link to these) and their CMS slugs. */

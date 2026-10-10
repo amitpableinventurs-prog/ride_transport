@@ -11,7 +11,7 @@ import { parseLatLng } from '../../utils/geo'
 import { HttpError, optionalString, parsePagination, requireObjectId, requireString } from '../../utils/http'
 import { getSmsProvider } from '../../utils/sms'
 
-const TICKET_CATEGORIES = ['payment', 'booking', 'driver', 'vehicle', 'lost_item', 'refund', 'cancellation', 'technical'] as const
+export const TICKET_CATEGORIES = ['payment', 'booking', 'driver', 'vehicle', 'lost_item', 'refund', 'cancellation', 'technical'] as const
 const ANNOUNCEMENT_DAYS = 30
 
 type PersonUser = Extract<AppUser, { type: 'customer' | 'driver' }>
@@ -79,12 +79,23 @@ export async function raiseSos(req: Request, res: Response) {
 export async function listTickets(req: Request, res: Response) {
   const user = personUser(req)
   const { page, limit, skip } = parsePagination(req)
-  const filter = { raisedByType: user.type, raisedById: user.doc._id }
+  // Claims have their own screen (GET /claims).
+  const filter = { raisedByType: user.type, raisedById: user.doc._id, category: { $ne: 'claim' } }
   const [items, total] = await Promise.all([
     Ticket.find(filter).select('-assignedTo').populate('booking', 'bookingCode mode status').sort({ createdAt: -1 }).skip(skip).limit(limit),
     Ticket.countDocuments(filter),
   ])
   res.json({ items, total, page, limit })
+}
+
+// GET /tickets/:id: one ticket with support's replies (notes).
+export async function getTicket(req: Request, res: Response) {
+  const user = personUser(req)
+  const ticket = await Ticket.findOne({ _id: requireObjectId(req.params.id, 'id'), raisedByType: user.type, raisedById: user.doc._id, category: { $ne: 'claim' } })
+    .select('-assignedTo')
+    .populate('booking', 'bookingCode mode status')
+  if (!ticket) throw new HttpError(404, 'Ticket not found')
+  res.json(ticket)
 }
 
 // POST /tickets

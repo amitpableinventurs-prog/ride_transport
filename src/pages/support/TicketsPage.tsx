@@ -3,7 +3,8 @@ import { Eye } from 'lucide-react'
 import { fetchTickets, updateTicket as updateTicketApi } from '@/api/tickets'
 import { fetchAdminUsers } from '@/api/adminUsers'
 import type { AdminUser } from '@/types/rbac'
-import type { Ticket, TicketCategory, TicketStatus, TicketPriority } from '@/types/marketing'
+import type { ClaimType, Ticket, TicketCategory, TicketStatus, TicketPriority } from '@/types/marketing'
+import { fileHref } from '@/api/files'
 import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
@@ -24,6 +25,14 @@ const CATEGORY_LABELS: Record<TicketCategory, string> = {
   refund: 'Refund',
   cancellation: 'Cancellation',
   technical: 'Technical',
+  claim: 'Claim',
+}
+
+const CLAIM_TYPE_LABELS: Record<ClaimType, string> = {
+  damaged_goods: 'Goods damaged',
+  lost_goods: 'Goods lost or missing',
+  overcharged: 'Charged too much',
+  other: 'Other',
 }
 
 const STATUS_TONE: Record<TicketStatus, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = {
@@ -251,6 +260,36 @@ function TicketDetailModal({
             <p className="text-xs font-medium text-navy-400">Category</p>
             <p className="text-navy-700">{CATEGORY_LABELS[ticket.category]}</p>
           </div>
+          {ticket.claim && (
+            <>
+              <div>
+                <p className="text-xs font-medium text-navy-400">Claim type</p>
+                <p className="text-navy-700">{CLAIM_TYPE_LABELS[ticket.claim.type]}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-navy-400">Amount claimed</p>
+                <p className="text-navy-700">{ticket.claim.amount != null ? `₹${ticket.claim.amount}` : 'Not stated'}</p>
+              </div>
+            </>
+          )}
+          {ticket.description && (
+            <div className="col-span-2">
+              <p className="text-xs font-medium text-navy-400">Description</p>
+              <p className="whitespace-pre-line text-navy-700">{ticket.description}</p>
+            </div>
+          )}
+          {!!ticket.claim?.photos.length && (
+            <div className="col-span-2">
+              <p className="mb-1 text-xs font-medium text-navy-400">Photos</p>
+              <div className="flex flex-wrap gap-2">
+                {ticket.claim.photos.map((url) => (
+                  <a key={url} href={fileHref(url)} target="_blank" rel="noreferrer">
+                    <img src={fileHref(url)} alt="Claim photo" className="h-20 w-20 rounded-lg object-cover" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <fieldset disabled={!canManage || saving} className="grid grid-cols-2 gap-3">

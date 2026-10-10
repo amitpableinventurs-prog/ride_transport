@@ -5,9 +5,10 @@ import * as home from '../../controllers/customer/home.controller'
 import * as bookings from '../../controllers/customer/bookings.controller'
 import * as payments from '../../controllers/customer/payments.controller'
 import * as profile from '../../controllers/app/profile.controller'
+import * as profileMenu from '../../controllers/customer/profileMenu.controller'
 import * as support from '../../controllers/app/support.controller'
 import { rejectDuringMaintenance, requireAppAuth, requireAppUserType } from '../../middleware/appAuth'
-import { singleUpload } from '../../utils/uploads'
+import { multiUpload, singleUpload } from '../../utils/uploads'
 import { perUserLimiter } from '../../middleware/overload'
 import { env } from '../../config/env'
 
@@ -22,6 +23,9 @@ router.use(rejectDuringMaintenance, requireAppAuth, requireAppUserType('customer
 
 router.get('/profile', profile.getProfile)
 router.patch('/profile', singleUpload('profile', 'photo', { imagesOnly: true }), profile.updateProfile)
+router.get('/profile/menu', profileMenu.getProfileMenu)
+router.get('/settings', profileMenu.getSettings)
+router.patch('/settings', profileMenu.updateSettings)
 
 router.get('/home', home.getHome)
 router.get('/all-services', home.getAllServices)
@@ -58,11 +62,20 @@ router.get('/wallet', payments.getWallet)
 router.post('/wallet/topup', payments.topUpWallet)
 router.post('/payments/order', payments.createPaymentOrder)
 router.post('/payments/verify', payments.verifyPayment)
+router.get('/payments/methods', account.listPaymentMethods)
 
 router.get('/offers', account.listOffers)
+router.get('/rewards', account.listRewards)
+router.get('/coins', account.getCoins)
+router.get('/help', profileMenu.getHelp)
+router.get('/safety', profileMenu.getSafety)
 router.post('/sos', support.raiseSos)
 router.get('/tickets', support.listTickets)
 router.post('/tickets', support.createTicket)
+router.get('/tickets/:id', support.getTicket)
+router.get('/claims', profileMenu.listClaims)
+router.post('/claims', multiUpload('claims', ['photo1', 'photo2', 'photo3'], { imagesOnly: true }), profileMenu.createClaim)
+router.get('/claims/:id', profileMenu.getClaim)
 router.get('/notifications', support.listNotifications)
 router.delete('/account', account.requestAccountDeletion)
 

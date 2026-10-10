@@ -4,19 +4,22 @@ import type { HydratedDocument } from 'mongoose'
 import { Banner } from '../../models/Banner'
 import { Booking, OPEN_BOOKING_STATUSES } from '../../models/Booking'
 import { Coupon } from '../../models/Coupon'
-import { SAVED_PLACE_LABELS, type CustomerDocument } from '../../models/Customer'
+import { CoinTransaction } from '../../models/CoinTransaction'
+import { Customer, SAVED_PLACE_LABELS, type CustomerDocument } from '../../models/Customer'
 import { Driver } from '../../models/Driver'
 import { ServiceCategory } from '../../models/ServiceCategory'
 import { Vehicle } from '../../models/Vehicle'
 import { applyCoupon } from '../../utils/coupons'
 import { boundingBox, etaMinutes, findServiceArea, haversineKm, parseLatLng, parsePlace, type LatLng } from '../../utils/geo'
-import { HttpError, optionalString, parseAmount, requireString } from '../../utils/http'
+import { WalletTransaction } from '../../models/WalletTransaction'
+import { HttpError, optionalString, parseAmount, parsePagination, requireString } from '../../utils/http'
+import { getOrCreateWallet } from '../../utils/wallet'
 import { normalizeIndianMobile } from '../../utils/phone'
 import { getPlatformSettings } from '../../utils/settings'
 import { TtlCache } from '../../utils/cache'
 
 const MAX_SAVED_PLACES = 10
-const MAX_EMERGENCY_CONTACTS = 3
+export const MAX_EMERGENCY_CONTACTS = 3
 const RIDER_LOCATION_FRESH_MS = 5 * 60 * 1000
 
 function customerDoc(req: Request): HydratedDocument<CustomerDocument> {
@@ -60,7 +63,7 @@ export async function deleteSavedPlace(req: Request, res: Response) {
 
 // ---------- Emergency (SOS) contacts ----------
 
-function contactsOf(customer: HydratedDocument<CustomerDocument>) {
+export function contactsOf(customer: HydratedDocument<CustomerDocument>) {
   if (customer.emergencyContacts.length) return customer.emergencyContacts
   return customer.emergencyContact ? [customer.emergencyContact] : []
 }
@@ -206,6 +209,78 @@ export async function listOffers(_req: Request, res: Response) {
       .sort({ startDate: -1 }),
   ])
   res.json({ coupons, banners })
+}
+
+// ---------- Profile menu: Payment, My Rewards, anzcabs Coins ----------
+
+// GET /payments/methods: the Payment screen. Online methods go through the payment gateway.
+export async function listPaymentMethods(req: Request, res: Response) {
+  const wallet = await getOrCreateWallet('customer', customerDoc(req)._id)
+  res.json({
+    wallet: { balance: wallet.balance, currency: wallet.currency, dues: Math.max(0, -wallet.balance) },
+    methods: [
+      { key: 'cash', name: 'Cash', available: true },
+      { key: 'wallet', name: 'AnZ Cabs Wallet', available: wallet.balance > 0, balance: wallet.balance },
+      { key: 'upi', name: 'UPI', available: true },
+      { key: 'card', name: 'Credit / Debit Card', available: true },
+      { key: 'netbanking', name: 'Net Banking', available: true },
+    ],
+  })
+}
+
+/** Wallet credits shown on My Rewards. */
+const REWARD_REASONS = ['referral', 'bonus'] as const
+const REWARD_TITLES: Record<(typeof REWARD_REASONS)[number], string> = { referral: 'Referral reward', bonus: 'Bonus from AnZ Cabs' }
+
+// GET /rewards?page=&limit=: My Rewards. Referral rewards and bonuses credited to the wallet, plus the coins balance.
+export async function listRewards(req: Request, res: Response) {
+  const customer = customerDoc(req)
+  const { page, limit, skip } = parsePagination(req)
+  const wallet = await getOrCreateWallet('customer', customer._id)
+  const filter = { wallet: wallet._id, type: 'credit', reason: { $in: REWARD_REASONS } }
+  const [items, total, totals] = await Promise.all([
+    WalletTransaction.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    WalletTransaction.countDocuments(filter),
+    WalletTransaction.aggregate<{ _id: null; amount: number }>([{ $match: filter }, { $group: { _id: null, amount: { $sum: '$amount' } } }]),
+  ])
+
+  // A referral credit points at the friend who joined (or who invited this customer).
+  const friendIds = items.filter((t) => t.reason === 'referral' && t.referenceId).map((t) => t.referenceId!)
+  const friends = friendIds.length ? await Customer.find({ _id: { $in: friendIds } }).select('name') : []
+  const friendName = (id?: unknown) => friends.find((f) => f._id.equals(id as string))?.name || null
+
+  res.json({
+    totalEarned: totals[0]?.amount ?? 0,
+    currency: wallet.currency,
+    coins: { balance: customer.coins },
+    items: items.map((t) => {
+      const reason = t.reason as (typeof REWARD_REASONS)[number]
+      const friend = reason === 'referral' ? friendName(t.referenceId) : null
+      return {
+        id: t.id,
+        type: reason,
+        title: REWARD_TITLES[reason],
+        subtitle: friend ? `With ${friend}` : null,
+        amount: t.amount,
+        createdAt: t.createdAt,
+      }
+    }),
+    total,
+    page,
+    limit,
+  })
+}
+
+// GET /coins?page=&limit=: anzcabs Coins balance and history. Earning and redeeming rules are not set up yet.
+export async function getCoins(req: Request, res: Response) {
+  const customer = customerDoc(req)
+  const { page, limit, skip } = parsePagination(req)
+  const filter = { customer: customer._id }
+  const [items, total] = await Promise.all([
+    CoinTransaction.find(filter).select('-customer').sort({ createdAt: -1 }).skip(skip).limit(limit),
+    CoinTransaction.countDocuments(filter),
+  ])
+  res.json({ balance: customer.coins, transactions: { items, total, page, limit } })
 }
 
 // ---------- Account ----------

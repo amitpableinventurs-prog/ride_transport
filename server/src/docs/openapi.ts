@@ -268,28 +268,277 @@ const TICKET_CATEGORIES = ['payment', 'booking', 'driver', 'vehicle', 'lost_item
 const APP_LANGUAGES = ['en', 'hi', 'mr', 'gu', 'bn', 'ta', 'te', 'kn', 'ml', 'pa', 'or'] as const
 const RIDER_DOC_TYPES = ['driving_license', 'vehicle_rc', 'vehicle_insurance', 'aadhaar', 'pan', 'pollution_certificate', 'permit', 'police_verification'] as const
 
+// ---------- App response shapes (customer and rider apps) ----------
+// Every document is sent with `id` (no `_id` / `__v`), including sub-documents such as stops and timeline entries.
+const nullable = (schema: Schema, description?: string) => ({ ...schema, nullable: true, ...(description ? { description } : {}) })
+const pagedOf = (item: Schema) => obj({ items: arr(item), total: int({ example: 42 }), page: int({ example: 1 }), limit: int({ example: 20 }) })
+const message = (example: string) => obj({ message: str({ example }) })
+const money = (example = 0) => num({ example })
+const latLng = obj({ lat: num({ example: 22.7196 }), lng: num({ example: 75.8577 }) })
+const point = obj({ address: str({ example: 'Vijay Nagar, Indore' }), lat: num({ example: 22.7533 }), lng: num({ example: 75.8937 }) })
+const serviceAreaRef = obj({ id: oid(), name: str({ example: 'Indore Central' }), city: str({ example: 'Indore' }) })
+const fareBreakdown = obj({
+  base: money(30),
+  distance: money(84),
+  time: money(18),
+  waiting: money(),
+  night: money(),
+  extraStops: money(),
+  loading: money(),
+  platformFee: money(5),
+  tax: money(6.85),
+  discount: money(),
+  tip: money(),
+  total: money(143.85),
+})
+const bookingStop = obj({
+  id: oid(),
+  address: str({ example: 'Palasia, Indore' }),
+  lat: num({ example: 22.7244 }),
+  lng: num({ example: 75.8839 }),
+  contactName: str({ example: 'Rahul' }),
+  contactPhone: str({ example: '+919876543222' }),
+  otp: str({ example: '5521', description: 'Customer app only: the receiver gives it to the rider on delivery' }),
+  status: enumOf(['pending', 'completed']),
+  completedAt: date(),
+  podUrl: str({ example: '/uploads/pod/3f2a.jpg', description: 'Proof-of-delivery photo' }),
+})
+const bookingVehicle = nullable(
+  obj({ id: oid(), registrationNumber: str({ example: 'MP09AB1234' }), model: str({ example: 'Honda Activa' }), manufacturer: str({ example: 'Honda' }), categoryKey: str({ example: 'bike' }) }),
+  'Vehicle on the trip; null before a rider accepts',
+)
+const bookingCommon = {
+  id: oid(),
+  bookingCode: str({ example: 'BK-MFX3K2A47' }),
+  mode: enumOf(SERVICE_MODE),
+  categoryKey: str({ example: 'bike' }),
+  partner: nullable(oid()),
+  pickup: point,
+  drop: point,
+  stops: { ...arr(bookingStop), description: 'Transport drops in order (empty for rides)' },
+  goodsDetails: obj({ description: str({ example: 'Documents' }), weightKg: num({ example: 5 }), notes: str(), needsLoading: bool() }),
+  goodsPhotoUrl: str({ description: 'Transport: goods photo taken at pickup' }),
+  status: enumOf(BOOKING_STATUS),
+  scheduledAt: nullable(date()),
+  fare: fareBreakdown,
+  couponCode: str({ example: 'WELCOME50' }),
+  distanceKm: num({ example: 6.2 }),
+  durationMin: int({ example: 19 }),
+  paymentStatus: enumOf(['pending', 'paid', 'failed', 'refunded']),
+  paymentMethod: enumOf(['cash', 'upi', 'card', 'wallet', 'netbanking']),
+  cancellation: obj({ by: enumOf(['customer', 'driver', 'admin']), reason: str(), chargedAmount: money() }),
+  serviceArea: oid(),
+  acceptedAt: date(),
+  arrivedAt: date(),
+  startedAt: date(),
+  completedAt: date(),
+  ratedByCustomer: bool(),
+  ratedByRider: bool(),
+  timeline: arr(obj({ id: oid(), status: enumOf(BOOKING_STATUS), at: date(), note: str({ example: 'Booking created' }) })),
+  createdAt: date(),
+  updatedAt: date(),
+}
+/** Booking as the customer app sees it: rider details without phone, plus the trip OTPs. */
+const customerBooking = obj({
+  ...bookingCommon,
+  customer: oid(),
+  driver: nullable(
+    obj({ id: oid(), name: str({ example: 'Manoj Tiwari' }), rating: num({ example: 4.8 }), photoUrl: str({ example: '/uploads/profile/9d46.jpg' }), currentLocation: obj({ lat: num(), lng: num(), heading: num(), speed: num(), updatedAt: date() }) }),
+    'Assigned rider (phone hidden; call through POST /bookings/{id}/call); null while searching',
+  ),
+  vehicle: bookingVehicle,
+  startOtp: str({ example: '4821', description: 'Customer reads it to the rider to start the trip' }),
+})
+const { otp: _stopOtp, ...riderStopFields } = bookingStop.properties
+/** Booking as the rider app sees it: customer details without phone, earnings split, no OTPs. */
+const riderBooking = obj({
+  ...bookingCommon,
+  stops: { ...arr(obj(riderStopFields)), description: 'Transport drops in order (no OTPs for the rider)' },
+  customer: obj({ id: oid(), name: str({ example: 'Meera Joshi' }), rating: num({ example: 4.5 }), photoUrl: str() }),
+  driver: oid(),
+  vehicle: { ...bookingVehicle, description: 'Populated on trip actions; only the vehicle id in GET /bookings (history)' },
+  settlement: obj({ commission: money(14.39), riderEarning: money(129.46) }),
+})
+const ratingEntity = obj({
+  id: oid(),
+  booking: oid(),
+  customer: oid(),
+  driver: oid(),
+  ratedBy: enumOf(['customer', 'driver']),
+  score: int({ example: 5 }),
+  comment: str({ example: 'Smooth ride' }),
+  createdAt: date(),
+  updatedAt: date(),
+})
+const walletTransaction = obj({
+  id: oid(),
+  wallet: oid(),
+  type: enumOf(['credit', 'debit']),
+  amount: money(100),
+  reason: enumOf(['booking_earning', 'booking_payment', 'tip', 'commission', 'recharge', 'refund', 'penalty', 'bonus', 'referral', 'withdrawal', 'adjustment']),
+  referenceType: str({ example: 'Booking' }),
+  referenceId: oid(),
+  balanceAfter: money(350),
+  createdBy: nullable(oid(), 'Admin who made a manual adjustment; null otherwise'),
+  createdAt: date(),
+  updatedAt: date(),
+})
+const paymentVerified = obj({
+  status: enumOf(['paid']),
+  purpose: enumOf(['booking', 'wallet_topup', 'rider_dues']),
+  amount: money(500),
+  bookingId: str({ description: 'Booking payments only' }),
+  walletBalance: money(650),
+  alreadyProcessed: bool({ description: 'true when this payment was verified before (nothing changed)' }),
+})
+const savedPlace = obj({ id: oid(), label: enumOf(['home', 'work', 'other']), name: str({ example: 'Gym' }), address: str({ example: 'Vijay Nagar, Indore' }), lat: num({ example: 22.7533 }), lng: num({ example: 75.8937 }) })
+const emergencyContactsResponse = obj({ contacts: arr(ref('EmergencyContact')), max: int({ example: 3 }) })
+const sosEntity = obj({
+  id: oid(),
+  booking: nullable(oid()),
+  raisedBy: enumOf(['customer', 'driver']),
+  userName: str({ example: 'Meera Joshi' }),
+  location: latLng,
+  status: enumOf(['open', 'acknowledged', 'resolved']),
+  notes: arr(obj({ id: oid(), by: str(), text: str(), at: date() })),
+  createdAt: date(),
+  updatedAt: date(),
+})
+const ticketEntity = obj({
+  id: oid(),
+  subject: str({ example: 'Charged twice' }),
+  category: enumOf(TICKET_CATEGORIES),
+  raisedByType: enumOf(['customer', 'driver']),
+  raisedByName: str(),
+  raisedById: oid(),
+  description: str(),
+  booking: nullable(obj({ id: oid(), bookingCode: str({ example: 'BK-MFX3K2A47' }), mode: enumOf(SERVICE_MODE), status: enumOf(BOOKING_STATUS) }), 'Populated in the list; the id when just created'),
+  status: enumOf(['open', 'assigned', 'in_progress', 'resolved', 'closed']),
+  priority: enumOf(['low', 'medium', 'high']),
+  notes: arr(obj({ id: oid(), by: str({ example: 'Support' }), text: str(), at: date() })),
+  resolvedAt: date(),
+  createdAt: date(),
+  updatedAt: date(),
+})
+const notificationsResponse = obj({
+  items: arr(
+    obj({
+      id: oid(),
+      userType: enumOf(['customer', 'driver']),
+      userId: oid(),
+      title: str({ example: 'Rider assigned' }),
+      body: str({ example: 'Manoj is on the way in MP09AB1234' }),
+      data: obj({ bookingId: str(), type: str({ example: 'rider_assigned' }) }),
+      readAt: nullable(date(), 'Set when the inbox page is opened'),
+      createdAt: date(),
+      updatedAt: date(),
+    }),
+  ),
+  total: int(),
+  page: int(),
+  limit: int(),
+  unreadCount: int({ example: 2, description: 'Before this page was marked read' }),
+  announcements: arr(obj({ id: oid(), title: str({ example: 'Diwali offer' }), body: str(), serviceModeFilter: enumOf(SERVICE_MODE_BOTH), createdAt: date() })),
+})
+const documentEntity = obj({
+  id: oid(),
+  ownerType: enumOf(['driver']),
+  ownerId: oid(),
+  docType: enumOf(RIDER_DOC_TYPES),
+  docNumber: str({ example: 'KA12345677899029' }),
+  fileUrl: str({ example: '/uploads/documents/a1b2.jpg' }),
+  backUrl: str({ example: '/uploads/documents/c3d4.jpg' }),
+  status: enumOf(DOC_STATUS),
+  expiryDate: date(),
+  rejectionReason: str({ example: 'Photo is blurry' }),
+  createdAt: date(),
+  updatedAt: date(),
+})
+const vehicleEntity = (vehicleType: Schema) =>
+  obj({
+    id: oid(),
+    registrationNumber: str({ example: 'MP09AB1234' }),
+    model: str({ example: 'Honda Activa' }),
+    manufacturer: str({ example: 'Honda' }),
+    vehicleType,
+    serviceMode: enumOf(SERVICE_MODE),
+    categoryKey: str({ example: 'bike' }),
+    ownerType: enumOf(['driver']),
+    ownerId: oid(),
+    ownerModel: enumOf(['Driver']),
+    capacity: str(),
+    status: enumOf(['active', 'inactive', 'blocked'], { description: 'inactive = waiting for admin approval' }),
+    documentsStatus: enumOf(DOC_STATUS),
+    createdAt: date(),
+    updatedAt: date(),
+  })
+const riderOnboarding = obj({
+  riderType: enumOf(['individual', 'partner']),
+  partner: nullable(oid()),
+  vehicleType: nullable(oid()),
+  services: arr(str({ example: 'bike' })),
+  hasLicense: bool(),
+  completedAt: date(),
+})
+const serviceOption = obj({ id: oid(), key: str({ example: 'bike' }), mode: enumOf(SERVICE_MODE), name: str({ example: 'Bike Taxi' }), icon: str({ example: 'bike' }) })
+const rideRequest = obj({
+  bookingId: oid(),
+  bookingCode: str({ example: 'BK-MFX3K2A47' }),
+  mode: enumOf(SERVICE_MODE),
+  categoryKey: str({ example: 'bike' }),
+  pickup: point,
+  drop: point,
+  stops: arr(obj({ id: oid(), address: str(), lat: num(), lng: num() })),
+  distanceKm: num({ example: 6.2 }),
+  distanceToPickupKm: num({ example: 1.4 }),
+  paymentMethod: enumOf(['cash', 'upi', 'card', 'wallet', 'netbanking']),
+  earning: money(129.46),
+  expiresAt: date({ description: 'Accept before this time' }),
+})
+const withdrawalEntity = obj({
+  id: oid(),
+  driver: oid(),
+  wallet: oid(),
+  amount: money(500),
+  method: enumOf(['bank', 'upi']),
+  upiId: str({ example: 'name@okaxis' }),
+  bankAccount: obj({ holderName: str(), accountNumber: str({ example: 'XXXX4321', description: 'Masked: last 4 digits' }), ifsc: str({ example: 'HDFC0001234' }) }),
+  status: enumOf(['requested', 'processing', 'paid', 'rejected']),
+  reference: str({ description: 'Bank / UPI reference once paid' }),
+  rejectionReason: str(),
+  processedAt: date(),
+  createdAt: date(),
+  updatedAt: date(),
+})
+
 // SOS, tickets and notifications are the same in both apps.
 const supportPaths = (tag: string) => ({
   '/sos': {
     post: appOp(tag, 'Raise SOS', {
       description: 'Alerts admins live (`sos:alert` on the /admin socket) and SMSes the emergency contacts a map link.',
       body: obj({ lat: num(), lng: num(), bookingId: oid('Optional; must be your booking'), note: str() }, ['lat', 'lng']),
+      response: obj({ sos: sosEntity, contactsNotified: int({ example: 2, description: 'Emergency contacts sent an SMS' }) }),
       status: 201,
       errors: [400, 404],
     }),
   },
   '/tickets': {
-    get: appOp(tag, 'My support tickets', { parameters: pageParams }),
+    get: appOp(tag, 'My support tickets', { parameters: pageParams, response: pagedOf(ticketEntity) }),
     post: appOp(tag, 'Raise a support ticket', {
       body: obj({ subject: str(), category: enumOf(TICKET_CATEGORIES), description: str(), bookingId: oid() }, ['subject', 'category']),
+      response: ticketEntity,
       status: 201,
       errors: [400, 404],
     }),
+  },
+  '/tickets/{id}': {
+    get: appOp(tag, 'One support ticket with support replies (`notes`)', { parameters: [pathParam('id', 'Ticket id', oid())], response: ticketEntity, errors: [404] }),
   },
   '/notifications': {
     get: appOp(tag, 'Notification inbox', {
       description: 'Personal notifications (marked read when returned) plus `announcements`: admin push broadcasts from the last 30 days.',
       parameters: pageParams,
+      response: notificationsResponse,
     }),
   },
 })
@@ -426,6 +675,32 @@ const onboardingStatusResponse = {
   },
 }
 
+// Profile tab: menu, Help, Safety, Claims and Settings.
+const CLAIM_TYPES = ['damaged_goods', 'lost_goods', 'overcharged', 'other'] as const
+const bookingBrief = obj({ id: oid(), bookingCode: str({ example: 'BK-MFX3K2A47' }), mode: enumOf(SERVICE_MODE), status: enumOf(BOOKING_STATUS) })
+const claimEntity = obj({
+  id: oid(),
+  type: enumOf(CLAIM_TYPES),
+  title: str({ example: 'Goods damaged' }),
+  description: str({ example: 'The glass top arrived cracked.' }),
+  amount: nullable(money(1200), 'Amount asked for; null when not stated'),
+  photos: arr(str({ example: '/uploads/claims/4f2a....jpg' })),
+  booking: bookingBrief,
+  status: enumOf(['open', 'assigned', 'in_progress', 'resolved', 'closed']),
+  notes: arr(obj({ id: oid(), by: str({ example: 'Support' }), text: str(), at: date() })),
+  resolvedAt: nullable(date()),
+  createdAt: date(),
+  updatedAt: date(),
+})
+const customerSettings = obj({
+  language: enumOf(APP_LANGUAGES),
+  notifications: obj({ tripUpdates: bool({ example: true, description: 'Always true: trip and payment updates cannot be switched off' }), offers: bool({ example: true }) }),
+  support: obj({ phone: str({ example: '+91 1800 200 3000' }), email: str() }),
+  legal: obj({ terms: str({ example: '/api/v1/customer/terms' }), privacyPolicy: str({ example: '/api/v1/customer/privacy-policy' }) }),
+  deletionRequestedAt: nullable(date(), 'Set once account deletion was requested'),
+})
+const MENU_KEYS = ['help', 'payment', 'my_rides', 'my_shipments', 'safety', 'refer_and_earn', 'my_rewards', 'coins', 'notifications', 'claims', 'settings'] as const
+
 const customerPaths = {
   '/terms': { get: legalPageOp('Customer', 'customer', 'terms') },
   '/privacy-policy': { get: legalPageOp('Customer', 'customer', 'privacy') },
@@ -440,6 +715,94 @@ const customerPaths = {
       { name: str(), email: str(), language: enumOf(APP_LANGUAGES), photo: binary('JPEG/PNG/WebP up to 5 MB'), emergencyContact: str({ description: 'JSON string in multipart' }) },
       [],
     ),
+  },
+  '/profile/menu': {
+    get: appOp('Customer', 'Profile tab: header card, menu rows and partner banner', {
+      description: [
+        'One call for the whole Profile tab. Open the screen for each row by its `key`:',
+        '`help` → GET /help · `payment` → GET /payments/methods · `my_rides` → GET /bookings?mode=ride · `my_shipments` → GET /bookings?mode=transport · `safety` → GET /safety · `refer_and_earn` → GET /referral · `my_rewards` → GET /rewards · `coins` → GET /coins · `notifications` → GET /notifications · `claims` → GET /claims · `settings` → GET /settings.',
+        '`refer_and_earn` is left out while referrals are switched off. Log out with POST /app/auth/logout.',
+      ].join('\n\n'),
+      response: obj({
+        user: obj({ id: oid(), name: str({ example: 'Nikhil Sajjan' }), phone: str({ example: '+919988776655' }), photoUrl: nullable(str()), rating: num({ example: 4.5 }), profileComplete: bool() }),
+        items: arr(
+          obj({
+            key: enumOf(MENU_KEYS),
+            title: str({ example: 'Refer and Earn' }),
+            subtitle: nullable(str({ example: 'Get ₹50' })),
+            badge: nullable(int({ example: 3 }), 'Coins balance, unread notifications or open claims; null when 0'),
+          }),
+        ),
+        partner: obj({ title: str({ example: 'Earn money with AnZ Cabs' }), subtitle: str({ example: 'Become a partner' }), url: nullable(str(), 'Rider app store link (RIDER_APP_URL); null when not set') }),
+      }),
+    }),
+  },
+  '/settings': {
+    get: appOp('Customer', 'Settings screen', { description: 'Language names come from GET /common/app-config.', response: customerSettings }),
+    patch: appOp('Customer', 'Change language or offer notifications', {
+      description: 'Send only what changed. With `offers: false` admin promotional push broadcasts are not sent to this customer.',
+      body: obj({ language: enumOf(APP_LANGUAGES), notifications: obj({ offers: bool() }) }),
+      response: customerSettings,
+      errors: [400],
+    }),
+  },
+  '/help': {
+    get: appOp('Customer', 'Help screen: support contacts, FAQ, ticket categories and recent trips', {
+      description: 'Raise a ticket with POST /tickets (`category` from `ticketCategories`, optional `bookingId` from `recentBookings`). See past tickets with GET /tickets.',
+      response: obj({
+        support: obj({ phone: str({ example: '+91 1800 200 3000' }), email: str() }),
+        faq: nullable(obj({ title: str({ example: 'FAQs' }), content: str({ description: 'Edited in the admin panel (CMS > faq)' }), updatedAt: date() })),
+        ticketCategories: arr(obj({ key: enumOf(TICKET_CATEGORIES), name: str({ example: 'Payment' }) })),
+        recentBookings: arr(obj({ id: oid(), bookingCode: str(), mode: enumOf(SERVICE_MODE), status: enumOf(BOOKING_STATUS), pickup: point, drop: point, fare: obj({ total: money(180) }), createdAt: date(), completedAt: date() })),
+        openTickets: int({ example: 1 }),
+      }),
+    }),
+  },
+  '/safety': {
+    get: appOp('Customer', 'Safety screen: emergency contacts, ongoing trip and safety tips', {
+      description: 'Edit contacts with PUT /emergency-contacts. Raise SOS with POST /sos (pass `ongoingBooking.id` as `bookingId`); share the trip with POST /bookings/{id}/share.',
+      response: obj({
+        emergencyContacts: obj({ contacts: arr(obj({ name: str({ example: 'Priya' }), phone: str({ example: '9876543210' }) })), max: int({ example: 3 }) }),
+        ongoingBooking: nullable(bookingBrief, 'null when no trip is in progress'),
+        support: obj({ phone: str({ example: '+91 1800 200 3000' }) }),
+        tips: arr(obj({ title: str({ example: 'Share your trip' }), description: str() })),
+      }),
+    }),
+  },
+  '/claims': {
+    get: appOp('Customer', 'My claims, plus claim types for the New Claim form', {
+      parameters: pageParams,
+      response: obj({
+        types: arr(obj({ key: enumOf(CLAIM_TYPES), name: str({ example: 'Goods damaged' }), transportOnly: bool({ description: 'Goods claims are only for shipments' }) })),
+        windowDays: int({ example: 7, description: 'Claims must be raised within this many days of the trip' }),
+        items: arr(claimEntity),
+        total: int(),
+        page: int(),
+        limit: int(),
+      }),
+    }),
+    post: multipart(
+      appOp('Customer', 'Raise a claim for a completed or cancelled booking', {
+        description:
+          'One open claim per booking, within 7 days of the trip. `damaged_goods` and `lost_goods` are only for shipments. Support handles it from the admin panel (Tickets, category "Claim") and replies in `notes`.',
+        response: claimEntity,
+        status: 201,
+        errors: [400, 404, 409],
+      }),
+      {
+        bookingId: oid(),
+        type: enumOf(CLAIM_TYPES),
+        description: str(),
+        amount: num({ example: 1200, description: 'Optional amount asked for' }),
+        photo1: binary('Optional JPEG/PNG/WebP up to 5 MB'),
+        photo2: binary('Optional'),
+        photo3: binary('Optional'),
+      },
+      ['bookingId', 'type', 'description'],
+    ),
+  },
+  '/claims/{id}': {
+    get: appOp('Customer', 'One claim', { parameters: [pathParam('id', 'Claim id', oid())], response: claimEntity, errors: [404] }),
   },
   '/home': {
     get: appOp('Customer', 'Home screen summary', {
@@ -495,20 +858,22 @@ const customerPaths = {
     }),
   },
   '/saved-places': {
-    get: appOp('Customer', 'Saved places'),
+    get: appOp('Customer', 'Saved places', { response: arr(savedPlace) }),
     post: appOp('Customer', 'Add a saved place', {
       description: '`home` and `work` are unique: saving one replaces the previous. `other` needs a `name`. Up to 10 places.',
       body: obj({ label: enumOf(['home', 'work', 'other']), name: str({ example: 'Gym' }), address: str(), lat: num(), lng: num() }, ['label', 'address', 'lat', 'lng']),
+      response: savedPlace,
       status: 201,
       errors: [400],
     }),
   },
   '/saved-places/{id}': { delete: appOp('Customer', 'Delete a saved place', { parameters: [idParam], status: 204, errors: [404] }) },
   '/emergency-contacts': {
-    get: appOp('Customer', 'SOS contacts'),
+    get: appOp('Customer', 'SOS contacts', { response: emergencyContactsResponse }),
     put: appOp('Customer', 'Replace SOS contacts (1-3)', {
       description: 'The first contact is also the Profile screen emergency contact.',
       body: obj({ contacts: arr(obj({ name: str(), phone: str() }, ['name', 'phone'])) }, ['contacts']),
+      response: emergencyContactsResponse,
       errors: [400],
     }),
   },
@@ -516,6 +881,20 @@ const customerPaths = {
     get: appOp('Customer', 'Ride + Transport categories at a location', {
       description: 'Per category: `ridersNearby` and `etaMin` of the nearest online rider. `serviceable: false` outside every service area.',
       parameters: [query('lat', 'Latitude', num()), query('lng', 'Longitude', num())],
+      response: (() => {
+        const item = obj({
+          key: str({ example: 'bike' }),
+          mode: enumOf(SERVICE_MODE),
+          name: str({ example: 'Bike Taxi' }),
+          description: str({ example: 'Quick and affordable' }),
+          icon: str({ example: 'bike' }),
+          seats: nullable(int({ example: 1 })),
+          capacityLabel: nullable(str({ example: 'Up to 20 kg' })),
+          ridersNearby: int({ example: 3 }),
+          etaMin: nullable(int({ example: 4 }), 'Nearest online rider; null when none'),
+        })
+        return obj({ serviceable: bool(), message: str({ description: 'Only when serviceable is false' }), serviceArea: nullable(serviceAreaRef), ride: arr(item), transport: arr(item) })
+      })(),
       errors: [400],
     }),
   },
@@ -524,6 +903,22 @@ const customerPaths = {
       description:
         'Rides have one drop; transport up to 5. Optional `mode`, `categoryKey`, `couponCode`, `scheduledAt`. Distance is estimated (straight line × 1.3) until a maps provider is added.',
       body: obj({ ...tripBody, mode: enumOf(SERVICE_MODE), categoryKey: str(), couponCode: str(), scheduledAt: date() }, ['pickup']),
+      response: obj({
+        serviceArea: serviceAreaRef,
+        estimates: arr(
+          obj({
+            categoryKey: str({ example: 'bike' }),
+            mode: enumOf(SERVICE_MODE),
+            name: str({ example: 'Bike Taxi' }),
+            icon: str({ example: 'bike' }),
+            distanceKm: num({ example: 6.2 }),
+            durationMin: int({ example: 19 }),
+            extraStops: int({ example: 0 }),
+            fare: fareBreakdown,
+            coupon: obj({ code: str({ example: 'WELCOME50' }), discount: money(50), error: str({ description: 'Set instead of code/discount when the coupon does not apply' }) }),
+          }),
+        ),
+      }),
       errors: [400, 422],
     }),
   },
@@ -531,6 +926,14 @@ const customerPaths = {
     post: appOp('Customer', 'Check a coupon against an estimate', {
       description: 'Always `200`; `valid: false` carries the reason.',
       body: obj({ code: str({ example: 'WELCOME50' }), categoryKey: str(), fareTotal: num(), pickup: place }, ['code', 'categoryKey', 'fareTotal']),
+      response: obj({
+        valid: bool(),
+        code: str({ example: 'WELCOME50' }),
+        title: str({ example: '50% off your first ride', description: 'When valid' }),
+        discount: money(50),
+        payable: money(93.85),
+        message: str({ example: 'This coupon has expired', description: 'When not valid' }),
+      }),
     }),
   },
   '/bookings': {
@@ -544,20 +947,41 @@ const customerPaths = {
         { ...tripBody, categoryKey: str({ example: 'bike' }), mode: enumOf(SERVICE_MODE), paymentMethod: enumOf(['cash', 'wallet', 'upi', 'card', 'netbanking']), couponCode: str(), scheduledAt: date() },
         ['categoryKey', 'pickup'],
       ),
+      response: customerBooking,
       status: 201,
       errors: [400, 402, 403, 409, 422],
     }),
     get: appOp('Customer', 'Booking history', {
+      response: pagedOf(customerBooking),
       parameters: [...pageParams, query('mode', 'ride or transport', enumOf(SERVICE_MODE)), query('status', 'Comma-separated statuses', str({ example: 'completed,cancelled' })), ...reportRange],
     }),
   },
-  '/bookings/{id}': { get: appOp('Customer', 'Booking detail: rider, timeline, fare', { parameters: [bookingIdParam], errors: [404] }) },
-  '/bookings/{id}/track': { get: appOp('Customer', 'Rider live location + ETA (fallback to socket)', { parameters: [bookingIdParam], errors: [404] }) },
+  '/bookings/{id}': {
+    get: appOp('Customer', 'Booking detail: rider, timeline, fare', {
+      parameters: [bookingIdParam],
+      response: obj({ ...customerBooking.properties, myRating: nullable(obj({ id: oid(), score: int({ example: 5 }), comment: str() }), 'Your rating of the rider; null until rated') }),
+      errors: [404],
+    }),
+  },
+  '/bookings/{id}/track': {
+    get: appOp('Customer', 'Rider live location + ETA (fallback to socket)', {
+      parameters: [bookingIdParam],
+      response: obj({
+        bookingId: oid(),
+        status: enumOf(BOOKING_STATUS),
+        rider: nullable(obj({ lat: num({ example: 22.7201 }), lng: num({ example: 75.8601 }), heading: num({ example: 90 }), updatedAt: date() }), 'null until the rider shares a location'),
+        etaMin: nullable(int({ example: 4 })),
+        etaTo: enumOf(['pickup', 'drop']),
+      }),
+      errors: [404],
+    }),
+  },
   '/bookings/{id}/drop': {
     patch: appOp('Customer', 'Change the drop during the trip', {
       description: 'Re-prices the trip and emits `booking:fare_updated` to customer and rider.',
       parameters: [bookingIdParam],
       body: obj({ drop: place }, ['drop']),
+      response: customerBooking,
       errors: [400, 404, 409, 422],
     }),
   },
@@ -568,30 +992,51 @@ const customerPaths = {
       parameters: [bookingIdParam],
       body: obj({ reason: str() }),
       bodyRequired: false,
+      response: obj({ ...customerBooking.properties, chargeApplied: money(25) }),
       errors: [404, 409],
     }),
   },
-  '/bookings/{id}/retry': { post: appOp('Customer', 'Retry the search after "no rider found"', { parameters: [bookingIdParam], errors: [404, 409] }) },
+  '/bookings/{id}/retry': { post: appOp('Customer', 'Retry the search after "no rider found"', { parameters: [bookingIdParam], response: customerBooking, errors: [404, 409] }) },
   '/bookings/{id}/rating': {
     post: appOp('Customer', 'Rate the rider and tip', {
       description: 'The tip (₹1-500) is paid from the wallet to the rider.',
       parameters: [bookingIdParam],
       body: obj({ score: int({ minimum: 1, maximum: 5 }), comment: str(), tip: num() }, ['score']),
+      response: obj({ rating: ratingEntity, tip: money(20) }),
       status: 201,
       errors: [400, 402, 404, 409],
     }),
   },
-  '/bookings/{id}/invoice': { get: appOp('Customer', 'Invoice PDF link (valid 7 days)', { parameters: [bookingIdParam], errors: [404, 409] }) },
-  '/bookings/{id}/share': { post: appOp('Customer', 'Create a public tracking link', { parameters: [bookingIdParam], errors: [404, 409] }) },
+  '/bookings/{id}/invoice': {
+    get: appOp('Customer', 'Invoice PDF link (valid 7 days)', {
+      parameters: [bookingIdParam],
+      response: obj({ url: str({ example: 'https://api.example.com/api/v1/public/invoices/eyJhbGciOi...' }), expiresInDays: int({ example: 7 }) }),
+      errors: [404, 409],
+    }),
+  },
+  '/bookings/{id}/share': {
+    post: appOp('Customer', 'Create a public tracking link', {
+      parameters: [bookingIdParam],
+      response: obj({ url: str({ example: 'https://api.example.com/api/v1/public/track/q8Xc1...' }), token: str({ example: 'q8Xc1...' }) }),
+      errors: [404, 409],
+    }),
+  },
   '/bookings/{id}/call': {
     post: appOp('Customer', 'Number to call the rider', {
       description:
         'Masked calling is not integrated yet: with TELEPHONY_PROVIDER=direct (development) this returns the real number with `masked: false`; production returns `503` until a provider is added.',
       parameters: [bookingIdParam],
+      response: obj({ number: str({ example: '+919876543210' }), masked: bool({ description: 'false = real number (development only)' }) }),
       errors: [404, 409, 503],
     }),
   },
-  '/wallet': { get: appOp('Customer', 'Balance + transactions', { parameters: pageParams }) },
+  '/wallet': {
+    get: appOp('Customer', 'Balance + transactions', {
+      parameters: pageParams,
+      response: obj({ balance: money(250), currency: str({ example: 'INR' }), dues: money(), transactions: pagedOf(walletTransaction) }),
+      description: 'A negative balance is unpaid cancellation charges; `dues` is that amount as a positive number.',
+    }),
+  },
   '/wallet/topup': {
     post: appOp('Customer', 'Gateway order to add money (₹10-10,000)', { body: obj({ amount: num({ example: 500 }) }, ['amount']), response: gatewayOrder, status: 201, errors: [400, 503] }),
   },
@@ -599,12 +1044,103 @@ const customerPaths = {
     post: appOp('Customer', 'Gateway order for a completed, unpaid booking', { body: obj({ bookingId: oid() }, ['bookingId']), response: gatewayOrder, status: 201, errors: [404, 409, 503] }),
   },
   '/payments/verify': {
-    post: appOp('Customer', 'Verify the gateway signature after payment', { description: 'Applies the payment once (booking marked paid, or wallet credited).', body: verifyBody, errors: [400, 404] }),
+    post: appOp('Customer', 'Verify the gateway signature after payment', { description: 'Applies the payment once (booking marked paid, or wallet credited).', body: verifyBody, response: paymentVerified, errors: [400, 404] }),
   },
-  '/offers': { get: appOp('Customer', 'Active coupons and banners') },
+  '/payments/methods': {
+    get: appOp('Customer', 'Payment screen: wallet balance and payment methods', {
+      description: 'Use the `key` as `paymentMethod` when booking. UPI, card and net banking are paid through the gateway (POST /payments/order).',
+      response: obj({
+        wallet: obj({ balance: money(250), currency: str({ example: 'INR' }), dues: money() }),
+        methods: arr(obj({ key: enumOf(['cash', 'wallet', 'upi', 'card', 'netbanking']), name: str({ example: 'UPI' }), available: bool({ description: 'Wallet: false while the balance is 0 or less' }), balance: money(250) })),
+      }),
+    }),
+  },
+  '/offers': {
+    get: appOp('Customer', 'Active coupons and banners', {
+      response: obj({
+        coupons: arr(
+          obj({
+            id: oid(),
+            code: str({ example: 'WELCOME50' }),
+            title: str({ example: '50% off your first ride' }),
+            discountType: enumOf(['flat', 'percentage']),
+            amount: num({ example: 50 }),
+            maxDiscount: num({ example: 75 }),
+            minBookingAmount: money(100),
+            applicableMode: enumOf(SERVICE_MODE_BOTH),
+            applicableCategories: arr(str({ example: 'bike' })),
+            validTo: date(),
+          }),
+        ),
+        banners: arr(
+          obj({
+            id: oid(),
+            title: str({ example: 'Ride more, save more' }),
+            description: str(),
+            imageUrl: str({ example: '/uploads/banners/offer.jpg' }),
+            ctaLabel: str({ example: 'Book now' }),
+            targetLink: str(),
+            serviceMode: enumOf(SERVICE_MODE_BOTH),
+          }),
+        ),
+      }),
+    }),
+  },
+  '/rewards': {
+    get: appOp('Customer', 'My Rewards: referral rewards and bonuses', {
+      description: 'Referral rewards and AnZ Cabs bonuses credited to the wallet, newest first, with the total earned and the coins balance.',
+      parameters: pageParams,
+      response: obj({
+        totalEarned: money(150),
+        currency: str({ example: 'INR' }),
+        coins: obj({ balance: int({ example: 0 }) }),
+        items: arr(
+          obj({
+            id: oid(),
+            type: enumOf(['referral', 'bonus']),
+            title: str({ example: 'Referral reward' }),
+            subtitle: nullable(str({ example: 'With Rahul Verma' }), 'Friend for referral rewards'),
+            amount: money(50),
+            createdAt: date(),
+          }),
+        ),
+        total: int(),
+        page: int(),
+        limit: int(),
+      }),
+    }),
+  },
+  '/coins': {
+    get: appOp('Customer', 'anzcabs Coins: balance and history', {
+      description: 'Earning and redeeming rules are not set up yet, so new accounts show 0 coins and an empty history.',
+      parameters: pageParams,
+      response: obj({
+        balance: int({ example: 0 }),
+        transactions: pagedOf(
+          obj({
+            id: oid(),
+            type: enumOf(['credit', 'debit']),
+            coins: int({ example: 10 }),
+            reason: enumOf(['ride', 'referral', 'bonus', 'redeemed', 'expired', 'adjustment']),
+            note: str(),
+            booking: nullable(oid()),
+            balanceAfter: int({ example: 10 }),
+            createdAt: date(),
+            updatedAt: date(),
+          }),
+        ),
+      }),
+    }),
+  },
   ...supportPaths('Customer'),
   '/account': {
-    delete: appOp('Customer', 'Request account deletion', { body: obj({ reason: str() }), bodyRequired: false, status: 202, errors: [409] }),
+    delete: appOp('Customer', 'Request account deletion', {
+      body: obj({ reason: str() }),
+      bodyRequired: false,
+      response: message('Your account deletion request has been received. It will be completed within 7 days.'),
+      status: 202,
+      errors: [409],
+    }),
   },
 }
 
@@ -643,11 +1179,22 @@ const riderPaths = {
     get: appOp('Rider', 'My Profile screen: account, stats (rating / orders / years), vehicle and ID card', { response: ref('RiderProfile') }),
     patch: multipart(appOp('Rider', 'Update profile', { description: 'Same fields as the customer profile.', response: ref('AppUser'), errors: [400] }), { name: str(), photo: binary('JPEG/PNG/WebP up to 5 MB') }, []),
   },
-  '/onboarding/options': { get: appOp('Rider', 'Licence choices, vehicle types, services and document types for onboarding') },
+  '/onboarding/options': {
+    get: appOp('Rider', 'Licence choices, vehicle types, services and document types for onboarding', {
+      response: obj({
+        licenseChoices: arr(obj({ hasLicense: bool(), title: str({ example: 'Yes' }), description: str({ example: 'Get Bike Taxi + Delivery Orders' }), modes: arr(enumOf(SERVICE_MODE)) })),
+        vehicleTypes: arr(obj({ id: oid(), name: str({ example: 'Bike' }), serviceMode: enumOf(SERVICE_MODE), capacityLabel: str() })),
+        services: arr(obj({ ...serviceOption.properties, description: str(), vehicleType: nullable(oid()) })),
+        documentTypes: obj({ required: arr(str({ example: 'driving_license' })), oneOf: arr(str({ example: 'aadhaar' })), optional: arr(str({ example: 'vehicle_rc' })) }),
+        current: nullable(riderOnboarding, 'What the rider saved so far; null before onboarding'),
+      }),
+    }),
+  },
   '/onboarding/license': {
     put: appOp('Rider', 'Do you have a driving licence? (Yes / No)', {
       description: '"Yes" = bike taxi + delivery orders. "No" = delivery (transport) orders only, and the licence upload is skipped. Returns the services allowed for the choice.',
       body: obj({ hasLicense: bool() }, ['hasLicense']),
+      response: obj({ hasLicense: bool(), modes: arr(enumOf(SERVICE_MODE)), services: arr(serviceOption) }),
       errors: [400, 409],
     }),
   },
@@ -665,6 +1212,7 @@ const riderPaths = {
         },
         ['type', 'vehicleTypeId', 'services'],
       ),
+      response: obj({ onboarding: riderOnboarding, partner: nullable(obj({ id: oid(), companyName: str({ example: 'Speedy Logistics' }) })), vehicleType: obj({ id: oid(), name: str({ example: 'Bike' }) }) }),
       errors: [400, 409],
     }),
   },
@@ -680,6 +1228,7 @@ const riderPaths = {
       appOp('Rider', 'Upload a document (front, back, number)', {
         description:
           'Re-uploading a type replaces it and sends it back for review. Needed for approval: driving_license (front + back, unless the rider has no licence) and one of aadhaar / pan. Number formats: driving licence like KA12345677899029, Aadhaar 12 digits, PAN like ABCDE1234F. vehicle_rc is uploaded with the vehicle (POST /vehicle) or here.',
+        response: documentEntity,
         status: 201,
         errors: [400, 409],
       }),
@@ -692,14 +1241,27 @@ const riderPaths = {
       },
       ['file', 'docType', 'docNumber'],
     ),
-    get: appOp('Rider', 'Documents with verification status'),
+    get: appOp('Rider', 'Documents with verification status', {
+      response: obj({
+        items: { ...arr(documentEntity), description: 'Latest upload of each document type' },
+        required: arr(obj({ docType: str({ example: 'driving_license' }), status: enumOf(['missing', ...DOC_STATUS]) })),
+        allowedTypes: arr(enumOf(RIDER_DOC_TYPES)),
+        backSide: obj({ required: arr(str({ example: 'driving_license' })), optional: arr(str({ example: 'vehicle_rc' })) }),
+      }),
+    }),
   },
   '/vehicle': {
-    get: appOp('Rider', 'Current vehicle + pending change requests'),
+    get: appOp('Rider', 'Current vehicle + pending change requests', {
+      response: obj({
+        current: nullable(vehicleEntity(obj({ id: oid(), name: str({ example: 'Bike' }), capacityLabel: str() })), 'Active vehicle; null when none'),
+        requests: { ...arr(vehicleEntity(obj({ id: oid(), name: str({ example: 'Bike' }), capacityLabel: str() }))), description: 'Vehicles waiting for admin approval' },
+      }),
+    }),
     post: multipart(
       appOp('Rider', 'Vehicle number screen: register or correct the vehicle', {
         description:
           'JSON or multipart. After onboarding only `registrationNumber` is needed; vehicle type and category come from the onboarding choice. Optional RC photos (`rcFront`, `rcBack`) are saved as the vehicle_rc document. Before approval, sending it again corrects the pending request (200); after approval it files a change request (201). Created inactive; goes live when an admin activates it.',
+        response: vehicleEntity(oid()),
         status: 201,
         errors: [400, 409],
       }),
@@ -715,7 +1277,20 @@ const riderPaths = {
       ['registrationNumber'],
     ),
   },
-  '/approval-status': { get: appOp('Rider', 'pending, under_review, approved or rejected + reasons') },
+  '/approval-status': {
+    get: appOp('Rider', 'pending, under_review, approved or rejected + reasons', {
+      response: obj({
+        status: enumOf(['pending', 'under_review', 'approved', 'rejected']),
+        reasons: arr(str({ example: 'driving_license: Photo is blurry' })),
+        steps: obj({
+          profileComplete: bool(),
+          onboardingComplete: bool(),
+          missingDocuments: arr(str({ example: 'identity' })),
+          documentsToReupload: arr(str({ example: 'driving_license' })),
+        }),
+      }),
+    }),
+  },
   '/performance': {
     get: appOp('Rider', 'Performance screen: trips, earnings and rating for the last N days + lifetime acceptance / cancellation rates', {
       parameters: [query('days', 'Period in days, 1 to 90 (default 7)', int({ example: 7 }))],
@@ -757,6 +1332,7 @@ const riderPaths = {
       description: 'Records the request and takes the rider offline; an admin completes it within 7 days. `409` during an ongoing trip or while wallet dues are unpaid.',
       body: obj({ reason: str({ maxLength: 500 }) }),
       bodyRequired: false,
+      response: message('Your account deletion request has been received. It will be completed within 7 days.'),
       status: 202,
       errors: [409],
     }),
@@ -765,32 +1341,44 @@ const riderPaths = {
     post: appOp('Rider', 'Go online', {
       description: '`403` not approved · `428` selfie due (`selfieRequired: true`) · `402` cash dues above `maxCashDues` · `409` no active vehicle.',
       body: obj({ lat: num(), lng: num() }, ['lat', 'lng']),
+      response: obj({
+        onlineStatus: enumOf(['online']),
+        vehicle: obj({ id: oid(), registrationNumber: str({ example: 'MP09AB1234' }), categoryKey: str({ example: 'bike' }) }),
+        selfieDueAt: date({ description: 'Take a new selfie before this time' }),
+      }),
       errors: [400, 402, 403, 409, 428],
     }),
   },
-  '/duty/offline': { post: appOp('Rider', 'Go offline', { errors: [409] }) },
+  '/duty/offline': { post: appOp('Rider', 'Go offline', { response: obj({ onlineStatus: enumOf(['offline']) }), errors: [409] }) },
   '/selfie-check': {
     post: multipart(
       appOp('Rider', 'Upload a selfie', {
         description: 'No face-match provider is integrated yet: the selfie is stored for admin review and the check passes (`faceMatch: "not_configured"`).',
+        response: obj({ verified: bool(), faceMatch: str({ example: 'not_configured' }), selfieUrl: str({ example: '/uploads/selfies/e90d.png' }), nextCheckDueAt: date() }),
         errors: [400],
       }),
       { selfie: binary('JPEG/PNG/WebP') },
       ['selfie'],
     ),
   },
-  '/requests/current': { get: appOp('Rider', 'Pending request offered to this rider') },
-  '/requests/{bookingId}/accept': { post: appOp('Rider', 'Accept a request (409 if taken or expired)', { parameters: [pathParam('bookingId', 'Booking id', oid())], errors: [409] }) },
+  '/requests/current': { get: appOp('Rider', 'Pending request offered to this rider', { response: obj({ request: nullable(rideRequest, 'null when nothing is offered') }) }) },
+  '/requests/{bookingId}/accept': {
+    post: appOp('Rider', 'Accept a request (409 if taken or expired)', { parameters: [pathParam('bookingId', 'Booking id', oid())], response: riderBooking, errors: [409] }),
+  },
   '/requests/{bookingId}/reject': { post: appOp('Rider', 'Reject a request', { parameters: [pathParam('bookingId', 'Booking id', oid())], status: 204, errors: [409] }) },
-  '/bookings/active': { get: appOp('Rider', 'Current trip') },
-  '/bookings': { get: appOp('Rider', 'Trip history', { parameters: [...pageParams, query('status', 'Comma-separated statuses'), ...reportRange] }) },
-  '/bookings/{id}/arrived': { post: appOp('Rider', 'Mark arrived at pickup', { parameters: [bookingIdParam], errors: [404, 409] }) },
+  '/bookings/active': { get: appOp('Rider', 'Current trip', { response: obj({ booking: nullable(riderBooking, 'null when not on a trip') }) }) },
+  '/bookings': { get: appOp('Rider', 'Trip history', { parameters: [...pageParams, query('status', 'Comma-separated statuses'), ...reportRange], response: pagedOf(riderBooking) }) },
+  '/bookings/{id}/arrived': { post: appOp('Rider', 'Mark arrived at pickup', { parameters: [bookingIdParam], response: riderBooking, errors: [404, 409] }) },
   '/bookings/{id}/start': {
-    post: multipart(appOp('Rider', 'Verify start/pickup OTP (+ goods photo)', { parameters: [bookingIdParam], errors: [400, 404, 409] }), { otp: str({ example: '4821' }), goodsPhoto: binary('Required for transport') }, ['otp']),
+    post: multipart(
+      appOp('Rider', 'Verify start/pickup OTP (+ goods photo)', { parameters: [bookingIdParam], response: riderBooking, errors: [400, 404, 409] }),
+      { otp: str({ example: '4821' }), goodsPhoto: binary('Required for transport') },
+      ['otp'],
+    ),
   },
   '/bookings/{id}/stops/{stopId}/complete': {
     post: multipart(
-      appOp('Rider', 'Complete a transport drop with OTP + POD', { parameters: [bookingIdParam, pathParam('stopId', 'Stop id', oid())], errors: [400, 404, 409] }),
+      appOp('Rider', 'Complete a transport drop with OTP + POD', { parameters: [bookingIdParam, pathParam('stopId', 'Stop id', oid())], response: riderBooking, errors: [400, 404, 409] }),
       { otp: str(), pod: binary('Proof-of-delivery photo') },
       ['otp', 'pod'],
     ),
@@ -799,11 +1387,17 @@ const riderPaths = {
     post: appOp('Rider', 'End trip; returns the final fare', {
       description: 'Adds waiting charges beyond `freeWaitingMinutes`. Wallet bookings are charged now; `collectCash` is the amount to collect for cash bookings.',
       parameters: [bookingIdParam],
+      response: obj({ booking: riderBooking, fare: fareBreakdown, earning: money(129.46), collectCash: money(143.85) }),
       errors: [404, 409],
     }),
   },
   '/bookings/{id}/cash-collected': {
-    post: appOp('Rider', 'Confirm cash received', { description: 'Marks the booking paid; the platform commission is added to the rider wallet as dues.', parameters: [bookingIdParam], errors: [404, 409] }),
+    post: appOp('Rider', 'Confirm cash received', {
+      description: 'Marks the booking paid; the platform commission is added to the rider wallet as dues.',
+      parameters: [bookingIdParam],
+      response: riderBooking,
+      errors: [404, 409],
+    }),
   },
   '/bookings/{id}/cancel': {
     post: appOp('Rider', 'Cancel with reason', {
@@ -815,14 +1409,52 @@ const riderPaths = {
     }),
   },
   '/bookings/{id}/rating': {
-    post: appOp('Rider', 'Rate the customer', { parameters: [bookingIdParam], body: obj({ score: int({ minimum: 1, maximum: 5 }), comment: str() }, ['score']), status: 201, errors: [400, 404, 409] }),
+    post: appOp('Rider', 'Rate the customer', {
+      parameters: [bookingIdParam],
+      body: obj({ score: int({ minimum: 1, maximum: 5 }), comment: str() }, ['score']),
+      response: ratingEntity,
+      status: 201,
+      errors: [400, 404, 409],
+    }),
   },
-  '/earnings': { get: appOp('Rider', 'Earnings summary and per-trip breakdown', { description: 'Defaults to the last 7 days.', parameters: reportRange }) },
-  '/wallet': { get: appOp('Rider', 'Balance, dues, transactions', { parameters: pageParams }) },
+  '/earnings': {
+    get: appOp('Rider', 'Earnings summary and per-trip breakdown', {
+      description: 'Defaults to the last 7 days.',
+      parameters: reportRange,
+      response: obj({
+        from: date(),
+        to: date(),
+        summary: obj({ trips: int({ example: 12 }), grossFare: money(1726), commission: money(172.6), netEarnings: money(1553.4), tips: money(40), cashCollected: money(820) }),
+        perTrip: arr(
+          obj({
+            bookingId: oid(),
+            bookingCode: str({ example: 'BK-MFX3K2A47' }),
+            mode: enumOf(SERVICE_MODE),
+            categoryKey: str({ example: 'bike' }),
+            completedAt: date(),
+            distanceKm: num({ example: 6.2 }),
+            fare: money(143.85),
+            commission: money(14.39),
+            earning: money(129.46),
+            tip: money(),
+            paymentMethod: enumOf(['cash', 'upi', 'card', 'wallet', 'netbanking']),
+            paymentStatus: enumOf(['pending', 'paid', 'failed', 'refunded']),
+          }),
+        ),
+      }),
+    }),
+  },
+  '/wallet': {
+    get: appOp('Rider', 'Balance, dues, transactions', {
+      description: 'A negative balance is commission owed on cash trips: `dues`. `withdrawable` is the positive balance.',
+      parameters: pageParams,
+      response: obj({ balance: money(350), currency: str({ example: 'INR' }), dues: money(), withdrawable: money(350), transactions: pagedOf(walletTransaction) }),
+    }),
+  },
   '/wallet/pay-dues': {
     post: appOp('Rider', 'Gateway order to clear dues', { body: obj({ amount: num({ description: 'Defaults to all dues' }) }), bodyRequired: false, response: gatewayOrder, status: 201, errors: [400, 409, 503] }),
   },
-  '/payments/verify': { post: appOp('Rider', 'Verify a dues payment', { body: verifyBody, errors: [400, 404] }) },
+  '/payments/verify': { post: appOp('Rider', 'Verify a dues payment', { body: verifyBody, response: paymentVerified, errors: [400, 404] }) },
   '/withdrawals': {
     post: appOp('Rider', 'Request a payout to bank/UPI', {
       description: 'Minimum `minWithdrawalAmount` (default ₹100). The amount is held from the wallet; one payout in progress at a time.',
@@ -830,29 +1462,109 @@ const riderPaths = {
         { amount: num(), method: enumOf(['bank', 'upi']), upiId: str({ example: 'name@okaxis' }), bankAccount: obj({ holderName: str(), accountNumber: str(), ifsc: str({ example: 'HDFC0001234' }) }) },
         ['amount', 'method'],
       ),
+      response: obj({ ...withdrawalEntity.properties, note: str({ example: 'Payouts are processed within 2 working days.' }) }),
       status: 201,
       errors: [400, 402, 409],
     }),
-    get: appOp('Rider', 'Payout history', { parameters: pageParams }),
+    get: appOp('Rider', 'Payout history', { parameters: pageParams, response: pagedOf(withdrawalEntity) }),
   },
-  '/incentives': { get: appOp('Rider', 'Active incentive schemes + progress') },
+  '/incentives': {
+    get: appOp('Rider', 'Active incentive schemes + progress', {
+      response: obj({
+        items: arr(
+          obj({
+            id: oid(),
+            title: str({ example: 'Weekend bonus' }),
+            description: str({ example: 'Complete 20 trips this weekend' }),
+            serviceArea: nullable(oid(), 'null = all areas'),
+            categoryKeys: arr(str({ example: 'bike' })),
+            targetTrips: int({ example: 20 }),
+            rewardAmount: money(300),
+            startAt: date(),
+            endAt: date(),
+            status: enumOf(ACTIVE_INACTIVE),
+            completedTrips: int({ example: 12 }),
+            remainingTrips: int({ example: 8 }),
+            achieved: bool(),
+            createdAt: date(),
+            updatedAt: date(),
+          }),
+        ),
+      }),
+    }),
+  },
   '/heatmap': {
     get: appOp('Rider', 'Demand zones', {
       description: 'Open requests vs online riders per ~1 km cell over the last hour, within 10 km.',
       parameters: [query('lat', 'Defaults to your last location', num()), query('lng', 'Defaults to your last location', num())],
+      response: obj({
+        center: latLng,
+        radiusKm: num({ example: 10 }),
+        windowMinutes: int({ example: 60 }),
+        zones: arr(obj({ lat: num({ example: 22.7195 }), lng: num({ example: 75.8575 }), demand: int({ example: 6 }), supply: int({ example: 2 }), level: enumOf(['low', 'medium', 'high']) })),
+      }),
     }),
   },
   ...supportPaths('Rider'),
 }
 
+const invoicePdf = op('Public', 'Invoice PDF', { auth: false, parameters: [pathParam('token', 'Invoice token')], errors: [404] })
+invoicePdf.responses[200] = { description: 'Invoice PDF (opens in the browser)', content: { 'application/pdf': { schema: str({ format: 'binary' }) } } }
+
 const commonPaths = {
-  '/common/app-config': { get: op('Common', 'Min version, feature flags, support numbers', { auth: false, parameters: [query('app', 'customer or rider', enumOf(['customer', 'rider']))] }) },
-  '/common/cms/{slug}': { get: op('Common', 'Terms, privacy, FAQs', { auth: false, parameters: [pathParam('slug', 'Page', enumOf(CMS_SLUGS))], errors: [404] }) },
-  '/common/devices': {
-    post: appOp('Common', 'Register an FCM token', { body: obj({ token: str(), platform: enumOf(['android', 'ios', 'web']), appVersion: str() }, ['token']), status: 201, errors: [400] }),
+  '/common/app-config': {
+    get: op('Common', 'Min version, feature flags, support numbers', {
+      auth: false,
+      parameters: [query('app', 'customer or rider', enumOf(['customer', 'rider']))],
+      response: obj({
+        app: enumOf(['customer', 'rider']),
+        platformName: str({ example: 'AnZ Cabs' }),
+        minVersion: str({ example: '1.0.0', description: 'Force-update below this app version' }),
+        maintenanceMode: bool(),
+        features: obj({ ride: bool(), transport: bool() }),
+        support: obj({ phone: str({ example: '+91 1800 200 3000' }), email: str({ example: 'support@anzcabs.com' }) }),
+        currency: str({ example: 'INR' }),
+        riderRequestTimeoutSeconds: int({ example: 30 }),
+        languages: { ...arr(obj({ code: enumOf(APP_LANGUAGES), name: str({ example: 'हिन्दी' }) })), description: 'Language Settings list; save with PATCH /profile { language }' },
+      }),
+    }),
   },
-  '/public/track/{token}': { get: op('Public', 'Public tracking page data (share link)', { auth: false, parameters: [pathParam('token', 'Share token')], errors: [404] }) },
-  '/public/invoices/{token}': { get: op('Public', 'Invoice PDF', { auth: false, parameters: [pathParam('token', 'Invoice token')], errors: [404] }) },
+  '/common/cms/{slug}': {
+    get: op('Common', 'Terms, privacy, FAQs', {
+      auth: false,
+      parameters: [pathParam('slug', 'Page', enumOf(CMS_SLUGS))],
+      response: obj({ id: oid(), slug: enumOf(CMS_SLUGS), title: str({ example: 'Privacy Policy' }), content: str({ description: 'Plain text; blank lines separate paragraphs' }), updatedAt: date() }),
+      errors: [404],
+    }),
+  },
+  '/common/devices': {
+    post: appOp('Common', 'Register an FCM token', {
+      body: obj({ token: str(), platform: enumOf(['android', 'ios', 'web']), appVersion: str() }, ['token']),
+      response: obj({ id: oid(), platform: enumOf(['android', 'ios', 'web']) }),
+      status: 201,
+      errors: [400],
+    }),
+  },
+  '/public/track/{token}': {
+    get: op('Public', 'Public tracking page data (share link)', {
+      auth: false,
+      parameters: [pathParam('token', 'Share token')],
+      response: obj({
+        bookingCode: str({ example: 'BK-MFX3K2A47' }),
+        status: enumOf(BOOKING_STATUS),
+        mode: enumOf(SERVICE_MODE),
+        customerName: nullable(str({ example: 'Meera' }), 'First name only'),
+        pickup: point,
+        drop: point,
+        rider: nullable(obj({ name: str({ example: 'Manoj', description: 'First name only' }), rating: num({ example: 4.8 }) })),
+        vehicle: nullable(obj({ registrationNumber: str({ example: 'MP09AB1234' }), model: str({ example: 'Honda Activa' }) })),
+        location: nullable(obj({ lat: num(), lng: num(), heading: num(), updatedAt: date() }), 'Rider location while the trip is running'),
+        etaMin: nullable(int({ example: 6 })),
+      }),
+      errors: [404],
+    }),
+  },
+  '/public/invoices/{token}': { get: invoicePdf },
 }
 
 const SOCKET_DOCS = [
@@ -1723,6 +2435,27 @@ export const openApiSpec = {
       get: op('Dashboard', 'Live dashboard KPIs', {
         permission: 'dashboard.view',
         description: 'Totals, today’s bookings and revenue, 30-day ride/transport split and status mix, 7-day revenue trend, recent bookings, pending approvals and alerts, all computed live.',
+        response: obj({
+          totals: obj({ customers: int({ example: 1250 }), riders: int({ example: 180 }), drivers: int({ example: 40 }), transportPartners: int({ example: 12 }), vehicles: int({ example: 210 }) }),
+          today: obj({ bookings: int({ example: 86 }), ongoingRides: int({ example: 9 }), activeDeliveries: int({ example: 3 }), completed: int({ example: 64 }), cancelled: int({ example: 5 }) }),
+          revenue: obj({ todayRevenue: num({ example: 18450 }), platformCommission: num({ example: 1845 }), partnerEarnings: num({ example: 16605 }), refunds: num({ example: 120 }) }),
+          serviceSplit: { ...arr(obj({ label: str({ example: 'Ride' }), value: num({ example: 64 }) })), description: 'Percent of bookings over 30 days: Ride / Transport' },
+          bookingStatusDistribution: arr(obj({ label: str({ example: 'Completed' }), value: int({ example: 64 }), color: str({ example: '#16a34a' }) })),
+          revenueTrend: arr(obj({ day: str({ example: 'Mon' }), revenue: num({ example: 15200 }) })),
+          recentBookings: arr(
+            obj({
+              id: str({ example: 'BK-MFX3K2A47', description: 'Booking code' }),
+              customer: str({ example: 'Meera Joshi' }),
+              mode: enumOf(['Ride', 'Transport']),
+              category: str({ example: 'bike' }),
+              status: str({ example: 'Completed' }),
+              fare: num({ example: 143.85 }),
+              createdAt: date(),
+            }),
+          ),
+          pendingApprovals: arr(obj({ id: oid(), type: str({ example: 'Rider' }), name: str({ example: 'Dobhal Sabh' }), submittedAt: date() })),
+          alerts: arr(obj({ id: str({ example: 'pending-documents' }), type: enumOf(['sos', 'operational', 'document', 'payment']), message: str({ example: '4 document(s) awaiting verification' }), severity: enumOf(['high', 'medium']), createdAt: date() })),
+        }),
       }),
     },
 

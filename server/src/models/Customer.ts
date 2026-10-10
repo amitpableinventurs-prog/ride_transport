@@ -33,6 +33,12 @@ const customerSchema = new Schema(
     referralCode: { type: String, unique: true, sparse: true, uppercase: true, trim: true },
     referredBy: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
     referralRewardedAt: { type: Date },
+    // anzcabs Coins balance (ledger in CoinTransaction).
+    coins: { type: Number, default: 0 },
+    // Settings screen. Trip and payment notifications are always sent; offers can be switched off.
+    notificationPrefs: {
+      offers: { type: Boolean, default: true },
+    },
     deletionRequestedAt: { type: Date },
     deletionReason: { type: String },
   },

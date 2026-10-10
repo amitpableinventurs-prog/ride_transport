@@ -81,6 +81,8 @@ export const env = {
   fcmRiderServiceAccount: process.env.FIREBASE_RIDER_SERVICE_ACCOUNT ?? '',
   // Masked calling: "direct" returns the real number (development only). Add Exotel etc. in src/utils/telephony.ts.
   telephonyProvider: process.env.TELEPHONY_PROVIDER ?? 'direct',
+  // Rider app store link for the customer app's "Earn money with anzcabs" banner.
+  riderAppUrl: process.env.RIDER_APP_URL ?? '',
 
   isProduction,
 }

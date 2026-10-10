@@ -15,7 +15,7 @@ const ALLOWED_TYPES: Record<string, string> = {
   'application/pdf': '.pdf',
 }
 
-export type UploadFolder = 'documents' | 'selfies' | 'goods' | 'pod' | 'profile'
+export type UploadFolder = 'documents' | 'selfies' | 'goods' | 'pod' | 'profile' | 'claims'
 
 // Files are stored on local disk under random names and served at /uploads.
 // For production, move this to S3 (or similar) behind signed URLs.

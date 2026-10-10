@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { NotificationTemplate } from '../models/NotificationTemplate'
 import { NotificationBroadcast } from '../models/NotificationBroadcast'
+import { Customer } from '../models/Customer'
 import { Device } from '../models/Device'
 import { Driver } from '../models/Driver'
 import { recordAudit } from '../utils/audit'
@@ -66,6 +67,8 @@ async function broadcastTokens(audience: string, serviceModeFilter: string): Pro
   if (userType === 'driver' && (serviceModeFilter === 'ride' || serviceModeFilter === 'transport')) {
     filter.userId = { $in: await Driver.find({ serviceType: serviceModeFilter === 'ride' ? 'rider' : 'transport' }).distinct('_id') }
   }
+  // Customers can switch off offer notifications in Settings.
+  if (userType === 'customer') filter.userId = { $nin: await Customer.find({ 'notificationPrefs.offers': false }).distinct('_id') }
   return { userType, tokens: await Device.find(filter).distinct('token') }
 }
 

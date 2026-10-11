@@ -89,10 +89,10 @@ export async function requestPayload(booking: BookingDoc, distanceToPickupKm?: n
   }
 }
 
-async function markNoRiderFound(bookingId: string) {
+async function markNoRiderFound(bookingId: string, note: string) {
   const booking = await Booking.findOneAndUpdate(
     { _id: bookingId, status: 'requested' },
-    { $set: { status: 'no_rider_found', offer: { driver: null } }, $push: { timeline: { status: 'no_rider_found', at: new Date(), note: 'No rider accepted' } } },
+    { $set: { status: 'no_rider_found', offer: { driver: null } }, $push: { timeline: { status: 'no_rider_found', at: new Date(), note } } },
     { new: true },
   )
   if (!booking) return
@@ -113,14 +113,18 @@ export async function offerNext(bookingId: string): Promise<void> {
   if (booking.offer?.driver && booking.offer.expiresAt && booking.offer.expiresAt > new Date()) return
 
   const settings = await getPlatformSettings()
-  if (booking.dispatchAttempts >= settings.maxDispatchAttempts) return markNoRiderFound(bookingId)
+  if (booking.dispatchAttempts >= settings.maxDispatchAttempts) {
+    return markNoRiderFound(bookingId, 'No rider accepted after dispatch attempts')
+  }
 
   const [candidate] = await findNearbyRiders(
     { lat: booking.pickup!.lat!, lng: booking.pickup!.lng! },
     booking.categoryKey,
     { radiusKm: settings.dispatchRadiusKm, exclude: booking.rejectedBy, limit: 1 },
   )
-  if (!candidate) return markNoRiderFound(bookingId)
+  if (!candidate) {
+    return markNoRiderFound(bookingId, `No eligible online rider found within ${settings.dispatchRadiusKm} km`)
+  }
 
   const now = new Date()
   const expiresAt = new Date(now.getTime() + settings.riderRequestTimeoutSeconds * 1000)

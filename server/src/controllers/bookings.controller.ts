@@ -137,6 +137,11 @@ export async function updateBookingStatus(req: Request, res: Response) {
     return
   }
 
+  if (['accepted', 'arriving', 'arrived', 'started', 'in_transit', 'completed'].includes(status) && !booking.driver) {
+    res.status(409).json({ message: 'Assign a rider before moving this booking to an active trip status' })
+    return
+  }
+
   booking.status = status
   if (status === 'cancelled') {
     booking.cancellation = {

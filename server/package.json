@@ -9,7 +9,10 @@
     "dev": "nodemon --watch src --ext ts --exec ts-node src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "seed": "ts-node src/seed.ts"
+    "seed": "ts-node src/seed.ts",
+    "reset": "ts-node src/reset.ts",
+    "restore:vehicles": "ts-node src/restoreVehicles.ts",
+    "restore:cms": "ts-node src/restoreCms.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

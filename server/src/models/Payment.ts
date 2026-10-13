@@ -8,6 +8,8 @@ const paymentSchema = new Schema(
     gateway: { type: String, enum: ['razorpay', 'stripe', 'cash', 'internal'], default: 'internal' },
     gatewayRefId: { type: String },
     status: { type: String, enum: ['initiated', 'success', 'failed', 'refunded'], default: 'initiated' },
+    // Total sent back to the customer's bank / card through the gateway.
+    refundedAmount: { type: Number, default: 0 },
   },
   { timestamps: true },
 )

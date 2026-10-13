@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Check, X, Banknote } from 'lucide-react'
-import { fetchRefunds, approveRefund, rejectRefund, processRefund } from '@/api/refunds'
-import type { Refund, PaginatedResult } from '@/types/finance'
+import { useEffect, useState, type FormEvent } from 'react'
+import { ChevronLeft, ChevronRight, Check, X, Banknote, Plus, Search } from 'lucide-react'
+import { fetchRefunds, approveRefund, rejectRefund, processRefund, fetchRefundBookingInfo, createRefund } from '@/api/refunds'
+import type { Refund, RefundBookingInfo, PaginatedResult } from '@/types/finance'
 import { Badge } from '@/components/common/Badge'
+import { Modal } from '@/components/common/Modal'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
 
@@ -12,8 +13,28 @@ const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyl
 function statusTone(status: Refund['status']): 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'processed') return 'success'
   if (status === 'rejected') return 'danger'
-  if (status === 'approved') return 'info'
+  if (status === 'approved' || status === 'processing') return 'info'
   return 'warning'
+}
+
+function apiMessage(err: unknown, fallback: string) {
+  return (err as { response?: { data?: { message?: string } } }).response?.data?.message ?? fallback
+}
+
+function DestinationCell({ refund }: { refund: Refund }) {
+  if (refund.status !== 'processed' || !refund.destination) return <span className="text-navy-300">—</span>
+  if (refund.destination === 'wallet') return <span className="text-navy-600">Customer wallet</span>
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <span className="text-navy-600">Bank / card</span>
+        {refund.gatewayStatus && (
+          <Badge tone={refund.gatewayStatus === 'processed' ? 'success' : refund.gatewayStatus === 'failed' ? 'danger' : 'warning'}>{refund.gatewayStatus}</Badge>
+        )}
+      </div>
+      {refund.gatewayRefundId && <p className="mt-0.5 font-mono text-xs text-navy-300">{refund.gatewayRefundId}</p>}
+    </div>
+  )
 }
 
 export function RefundsPage() {
@@ -22,6 +43,7 @@ export function RefundsPage() {
   const [page, setPage] = useState(1)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
 
   function load() {
     return fetchRefunds({ status: status || undefined, page, limit: 20 }).then(setResult)
@@ -65,8 +87,8 @@ export function RefundsPage() {
     setError(null)
     try {
       replace(await processRefund(refund.id))
-    } catch {
-      setError('Could not process refund.')
+    } catch (err) {
+      setError(apiMessage(err, 'Could not process refund.'))
     } finally {
       setBusyId(null)
     }
@@ -76,9 +98,21 @@ export function RefundsPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-navy-800">Refunds</h1>
-        <p className="text-sm text-navy-400">Customer refund requests awaiting approval, rejection or processing.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-navy-800">Refunds</h1>
+          <p className="text-sm text-navy-400">
+            Online payments are refunded to the customer's bank or card through Razorpay; cash and wallet bookings are refunded to the wallet.
+          </p>
+        </div>
+        <PermissionGate permission="finance.manage">
+          <button
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-orange px-3 py-2 text-sm font-semibold text-white hover:bg-brand-orange-dark"
+          >
+            <Plus size={16} /> New refund
+          </button>
+        </PermissionGate>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -94,6 +128,7 @@ export function RefundsPage() {
           <option value="requested">Requested</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
+          <option value="processing">Processing</option>
           <option value="processed">Processed</option>
         </select>
       </div>
@@ -105,13 +140,14 @@ export function RefundsPage() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-2xl border border-navy-100 bg-white shadow-sm">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1040px] text-left text-sm">
               <thead>
                 <tr className="border-b border-navy-100 bg-navy-50/50 text-xs uppercase tracking-wide text-navy-400">
                   <th className="px-5 py-3 font-medium">Booking</th>
                   <th className="px-5 py-3 font-medium">Amount</th>
                   <th className="px-5 py-3 font-medium">Reason</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium">Sent to</th>
                   <th className="px-5 py-3 font-medium">Requested by</th>
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-5 py-3 font-medium text-right">Actions</th>
@@ -125,6 +161,9 @@ export function RefundsPage() {
                     <td className="px-5 py-3 text-navy-600">{refund.reason}</td>
                     <td className="px-5 py-3">
                       <Badge tone={statusTone(refund.status)}>{refund.status}</Badge>
+                    </td>
+                    <td className="px-5 py-3">
+                      <DestinationCell refund={refund} />
                     </td>
                     <td className="px-5 py-3 text-navy-600">{refund.requestedBy ?? '—'}</td>
                     <td className="px-5 py-3 whitespace-nowrap text-navy-500">{dateFmt.format(new Date(refund.createdAt))}</td>
@@ -158,7 +197,7 @@ export function RefundsPage() {
                               <Banknote size={14} /> Process
                             </button>
                           )}
-                          {(refund.status === 'rejected' || refund.status === 'processed') && (
+                          {(refund.status === 'rejected' || refund.status === 'processed' || refund.status === 'processing') && (
                             <span className="text-xs text-navy-300">No actions</span>
                           )}
                         </div>
@@ -168,7 +207,7 @@ export function RefundsPage() {
                 ))}
                 {result.items.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-navy-300">
+                    <td colSpan={8} className="px-5 py-8 text-center text-navy-300">
                       No refunds found.
                     </td>
                   </tr>
@@ -200,6 +239,148 @@ export function RefundsPage() {
           </div>
         </>
       )}
+
+      {creating && (
+        <NewRefundModal
+          onClose={() => setCreating(false)}
+          onCreated={(refund) => {
+            setResult((prev) => (prev ? { ...prev, items: [refund, ...prev.items], total: prev.total + 1 } : prev))
+            setCreating(false)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+const DESTINATION_TEXT: Record<RefundBookingInfo['destination'], string> = {
+  source: "Paid online: the refund goes back to the customer's bank / card / UPI through Razorpay (5-7 working days).",
+  wallet: "Paid by cash or wallet: the refund goes to the customer's AnZ Cabs wallet.",
+}
+
+function NewRefundModal({ onClose, onCreated }: { onClose: () => void; onCreated: (refund: Refund) => void }) {
+  const [bookingCode, setBookingCode] = useState('')
+  const [info, setInfo] = useState<RefundBookingInfo | null>(null)
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleLookup() {
+    if (!bookingCode.trim()) return
+    setBusy(true)
+    setError(null)
+    setInfo(null)
+    try {
+      const found = await fetchRefundBookingInfo(bookingCode.trim())
+      setInfo(found)
+      setAmount(String(found.maxRefundable))
+    } catch (err) {
+      setError(apiMessage(err, 'Could not find that booking.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!info) return
+    setBusy(true)
+    setError(null)
+    try {
+      onCreated(await createRefund({ bookingCode: info.bookingCode, amount: Number(amount), reason: reason.trim() }))
+    } catch (err) {
+      setError(apiMessage(err, 'Could not create the refund.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="New refund" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-navy-600">Booking ID</label>
+          <div className="flex gap-2">
+            <input
+              value={bookingCode}
+              onChange={(e) => {
+                setBookingCode(e.target.value)
+                setInfo(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !info) {
+                  e.preventDefault()
+                  void handleLookup()
+                }
+              }}
+              placeholder="BK-..."
+              className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm uppercase outline-none focus:border-navy-400"
+            />
+            <button
+              type="button"
+              onClick={handleLookup}
+              disabled={busy || !bookingCode.trim()}
+              className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-3 py-2 text-sm font-medium text-navy-600 hover:bg-navy-50 disabled:opacity-50"
+            >
+              <Search size={14} /> Check
+            </button>
+          </div>
+        </div>
+
+        {info && (
+          <>
+            <div className="space-y-1 rounded-lg bg-navy-50/60 px-3 py-2.5 text-xs text-navy-600">
+              <p>
+                <span className="font-medium text-navy-800">{info.customer?.name || 'Customer'}</span>
+                {info.customer?.phone ? ` · ${info.customer.phone}` : ''}
+              </p>
+              <p>
+                Paid {moneyFmt.format(info.paidTotal)} via {info.paidVia} · already refunded {moneyFmt.format(info.alreadyRefunded)}
+              </p>
+              <p className="font-medium text-navy-800">Can refund up to {moneyFmt.format(info.maxRefundable)}</p>
+              <p className="text-navy-500">{DESTINATION_TEXT[info.destination]}</p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-navy-600">Amount</label>
+              <input
+                type="number"
+                step="0.01"
+                min="1"
+                max={info.maxRefundable}
+                required
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm outline-none focus:border-navy-400"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-navy-600">Reason</label>
+              <input
+                required
+                maxLength={300}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Rider took a longer route"
+                className="w-full rounded-lg border border-navy-100 px-3 py-2 text-sm outline-none focus:border-navy-400"
+              />
+            </div>
+          </>
+        )}
+
+        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}
+
+        <button
+          type="submit"
+          disabled={busy || !info || info.maxRefundable <= 0}
+          className="w-full rounded-lg bg-brand-orange py-2.5 text-sm font-semibold text-white hover:bg-brand-orange-dark disabled:opacity-60"
+        >
+          Create refund request
+        </button>
+        <p className="text-center text-xs text-navy-400">The refund is sent only after it is approved and processed.</p>
+      </form>
+    </Modal>
   )
 }

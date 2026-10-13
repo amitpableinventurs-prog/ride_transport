@@ -8,12 +8,23 @@ export interface GatewayOrderResult {
   currency: string
 }
 
+export interface GatewayRefundResult {
+  id: string
+  status: 'pending' | 'processed' | 'failed'
+}
+
 export interface PaymentProvider {
   name: string
   /** Public key the app passes to the gateway checkout SDK. */
   publicKey?: string
   createOrder(amountRupees: number, receipt: string): Promise<GatewayOrderResult>
   verifySignature(orderId: string, paymentId: string, signature: string): boolean
+  /** Asks the gateway whether the order was paid; returns the captured payment id or null. */
+  findCapturedPayment(orderId: string): Promise<string | null>
+  /** Checks a webhook's signature over the raw request body. */
+  verifyWebhookSignature(rawBody: Buffer, signature: string): boolean
+  /** Refunds (part of) a captured payment back to the customer's bank, card or UPI. */
+  refundPayment(paymentId: string, amountRupees: number, receipt: string): Promise<GatewayRefundResult>
 }
 
 function hmacEquals(secret: string, payload: string, signature: string): boolean {
@@ -33,6 +44,19 @@ const mockProvider: PaymentProvider = {
   verifySignature(_orderId, _paymentId, signature) {
     return signature === MOCK_SIGNATURE
   },
+  async findCapturedPayment() {
+    return null
+  },
+  verifyWebhookSignature() {
+    return false
+  },
+  async refundPayment() {
+    return { id: `rfnd_mock_${crypto.randomBytes(8).toString('hex')}`, status: 'processed' }
+  },
+}
+
+function razorpayAuthHeader() {
+  return `Basic ${Buffer.from(`${env.razorpayKeyId}:${env.razorpayKeySecret}`).toString('base64')}`
 }
 
 // Razorpay Orders API: https://razorpay.com/docs/api/orders/
@@ -42,10 +66,9 @@ const razorpayProvider: PaymentProvider = {
     return env.razorpayKeyId
   },
   async createOrder(amountRupees, receipt) {
-    const auth = Buffer.from(`${env.razorpayKeyId}:${env.razorpayKeySecret}`).toString('base64')
     const response = await fetch('https://api.razorpay.com/v1/orders', {
       method: 'POST',
-      headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: razorpayAuthHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount: Math.round(amountRupees * 100), currency: 'INR', receipt }),
     })
     if (!response.ok) {
@@ -57,6 +80,43 @@ const razorpayProvider: PaymentProvider = {
   },
   verifySignature(orderId, paymentId, signature) {
     return hmacEquals(env.razorpayKeySecret, `${orderId}|${paymentId}`, signature)
+  },
+  // https://razorpay.com/docs/api/orders/fetch-payments/
+  async findCapturedPayment(orderId) {
+    const response = await fetch(`https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}/payments`, {
+      headers: { Authorization: razorpayAuthHeader() },
+    })
+    if (!response.ok) {
+      console.error('[payments:razorpay] fetching order payments failed', orderId, response.status, await response.text())
+      throw new HttpError(502, 'Could not check the payment status. Please try again.')
+    }
+    const { items = [] } = (await response.json()) as { items?: { id: string; status: string }[] }
+    return items.find((p) => p.status === 'captured')?.id ?? null
+  },
+  // https://razorpay.com/docs/webhooks/validate-test/
+  verifyWebhookSignature(rawBody, signature) {
+    return Boolean(env.razorpayWebhookSecret) && hmacEquals(env.razorpayWebhookSecret, rawBody.toString('utf8'), signature)
+  },
+  // https://razorpay.com/docs/api/refunds/create-normal/
+  async refundPayment(paymentId, amountRupees, receipt) {
+    const response = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}/refund`, {
+      method: 'POST',
+      headers: { Authorization: razorpayAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: Math.round(amountRupees * 100), speed: 'normal', receipt }),
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      console.error('[payments:razorpay] refund failed', paymentId, response.status, text)
+      let reason = ''
+      try {
+        reason = (JSON.parse(text) as { error?: { description?: string } }).error?.description ?? ''
+      } catch {
+        // not JSON
+      }
+      throw new HttpError(502, reason ? `Razorpay refused the refund: ${reason}` : 'Could not reach Razorpay for the refund. Please try again.')
+    }
+    const refund = (await response.json()) as { id: string; status: GatewayRefundResult['status'] }
+    return { id: refund.id, status: refund.status }
   },
 }
 

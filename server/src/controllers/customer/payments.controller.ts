@@ -2,8 +2,8 @@
 import type { Request, Response } from 'express'
 import { Booking } from '../../models/Booking'
 import { WalletTransaction } from '../../models/WalletTransaction'
-import { createGatewayOrder, verifyGatewayPayment } from '../../services/gatewayPayments'
-import { HttpError, parseAmount, parsePagination, requireObjectId } from '../../utils/http'
+import { createGatewayOrder, getGatewayOrderStatus, verifyGatewayPayment } from '../../services/gatewayPayments'
+import { HttpError, parseAmount, parsePagination, requireObjectId, requireString } from '../../utils/http'
 import { getOrCreateWallet } from '../../utils/wallet'
 
 const MIN_TOPUP = 10
@@ -42,4 +42,9 @@ export async function createPaymentOrder(req: Request, res: Response) {
 // POST /payments/verify: booking payments and wallet top-ups.
 export async function verifyPayment(req: Request, res: Response) {
   res.json(await verifyGatewayPayment({ type: 'customer', id: req.appUser!.doc._id }, req.body as Record<string, unknown>))
+}
+
+// GET /payments/orders/:orderId: poll after checkout; a paid order is applied even if /payments/verify never came.
+export async function getPaymentStatus(req: Request, res: Response) {
+  res.json(await getGatewayOrderStatus({ type: 'customer', id: req.appUser!.doc._id }, requireString(req.params.orderId, 'orderId')))
 }

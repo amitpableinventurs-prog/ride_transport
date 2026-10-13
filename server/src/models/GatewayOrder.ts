@@ -14,6 +14,8 @@ const gatewayOrderSchema = new Schema(
     providerPaymentId: { type: String },
     status: { type: String, enum: ['created', 'paid', 'failed'], default: 'created' },
     paidAt: { type: Date },
+    // Last time the reconciler asked the gateway about this unpaid order.
+    lastCheckedAt: { type: Date },
   },
   { timestamps: true },
 )

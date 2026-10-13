@@ -18,6 +18,7 @@ import pricingRoutes from './pricing.routes'
 import commissionsRoutes from './commissions.routes'
 import paymentsRoutes from './payments.routes'
 import refundsRoutes from './refunds.routes'
+import withdrawalsRoutes from './withdrawals.routes'
 import walletsRoutes from './wallets.routes'
 import settlementsRoutes from './settlements.routes'
 import couponsRoutes from './coupons.routes'
@@ -50,6 +51,7 @@ router.use('/pricing', pricingRoutes)
 router.use('/commissions', commissionsRoutes)
 router.use('/payments', paymentsRoutes)
 router.use('/refunds', refundsRoutes)
+router.use('/withdrawals', withdrawalsRoutes)
 router.use('/wallets', walletsRoutes)
 router.use('/settlements', settlementsRoutes)
 router.use('/coupons', couponsRoutes)

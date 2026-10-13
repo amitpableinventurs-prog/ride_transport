@@ -14,6 +14,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler'
 import { apiLimiter, noStore, sanitizeRequest } from './middleware/security'
 import { overloadGuard, overloadStats, requestTimeout } from './middleware/overload'
 import { openApiSpec } from './docs/openapi'
+import { razorpayWebhook } from './controllers/webhooks.controller'
 import mongoose from 'mongoose'
 
 export const app = express()
@@ -27,6 +28,8 @@ const defaultHelmet = helmet()
 const docsHelmet = helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } } })
 app.use((req, res, next) => (req.path === '/api-docs' || req.path.startsWith('/api-docs/') ? docsHelmet : defaultHelmet)(req, res, next))
 app.use(cors({ origin: env.corsOrigin }))
+// Gateway webhooks need the raw body for the signature check, so they come before the JSON parser.
+app.post('/api/v1/webhooks/razorpay', express.raw({ type: 'application/json', limit: '100kb' }), razorpayWebhook)
 app.use(express.json({ limit: '100kb' }))
 if (env.logRequests) app.use(morgan(env.isProduction ? 'combined' : 'dev'))
 

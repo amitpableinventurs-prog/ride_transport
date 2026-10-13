@@ -390,7 +390,23 @@ const paymentVerified = obj({
   bookingId: str({ description: 'Booking payments only' }),
   walletBalance: money(650),
   alreadyProcessed: bool({ description: 'true when this payment was verified before (nothing changed)' }),
+  creditedToWallet: bool({ description: 'Booking payments only: true when the booking was already paid, so this payment went to the wallet' }),
 })
+const paymentStatus = obj({
+  status: enumOf(['created', 'paid', 'failed']),
+  purpose: enumOf(['booking', 'wallet_topup', 'rider_dues']),
+  amount: money(500),
+  bookingId: str({ description: 'Booking payments only' }),
+  walletBalance: money(650),
+  alreadyProcessed: bool(),
+  creditedToWallet: bool(),
+})
+const orderIdParam = pathParam('orderId', 'Gateway order id from the order API', str({ example: 'order_TnJ4Q5K76efsYn' }))
+const paymentStatusDescription = [
+  'Poll this after the checkout closes (success, failure or the user leaving the app). If the order is still `created`, the server asks the gateway; a captured payment is applied here even when `/payments/verify` was never called.',
+  '`status: "created"` means no successful payment yet: keep the user on a "checking payment" state for a few seconds, then let them retry.',
+  'The server also applies missed payments on its own (Razorpay webhook and a background check every 2 minutes).',
+].join('\n\n')
 const savedPlace = obj({ id: oid(), label: enumOf(['home', 'work', 'other']), name: str({ example: 'Gym' }), address: str({ example: 'Vijay Nagar, Indore' }), lat: num({ example: 22.7533 }), lng: num({ example: 75.8937 }) })
 const emergencyContactsResponse = obj({ contacts: arr(ref('EmergencyContact')), max: int({ example: 3 }) })
 const sosEntity = obj({
@@ -495,6 +511,20 @@ const rideRequest = obj({
   earning: money(129.46),
   expiresAt: date({ description: 'Accept before this time' }),
 })
+const adminWithdrawalFields = {
+  id: oid(),
+  driver: obj({ id: oid(), name: str(), phone: str() }),
+  amount: money(500),
+  method: enumOf(['bank', 'upi']),
+  upiId: str({ example: 'name@okaxis' }),
+  bankAccount: obj({ holderName: str(), accountNumber: str({ example: '50100123454321' }), ifsc: str({ example: 'HDFC0001234' }) }),
+  status: enumOf(['requested', 'processing', 'paid', 'rejected']),
+  reference: str(),
+  rejectionReason: str(),
+  processedAt: date(),
+  createdAt: date(),
+}
+const adminWithdrawal = obj(adminWithdrawalFields)
 const withdrawalEntity = obj({
   id: oid(),
   driver: oid(),
@@ -1044,7 +1074,16 @@ const customerPaths = {
     post: appOp('Customer', 'Gateway order for a completed, unpaid booking', { body: obj({ bookingId: oid() }, ['bookingId']), response: gatewayOrder, status: 201, errors: [404, 409, 503] }),
   },
   '/payments/verify': {
-    post: appOp('Customer', 'Verify the gateway signature after payment', { description: 'Applies the payment once (booking marked paid, or wallet credited).', body: verifyBody, response: paymentVerified, errors: [400, 404] }),
+    post: appOp('Customer', 'Verify the gateway signature after payment', {
+      description:
+        'Call from the checkout success callback. Applies the payment once (booking marked paid, or wallet credited). If the booking was already paid, the money goes to the wallet (`creditedToWallet: true`).',
+      body: verifyBody,
+      response: paymentVerified,
+      errors: [400, 404],
+    }),
+  },
+  '/payments/orders/{orderId}': {
+    get: appOp('Customer', 'Payment status of a gateway order', { description: paymentStatusDescription, parameters: [orderIdParam], response: paymentStatus, errors: [404, 502] }),
   },
   '/payments/methods': {
     get: appOp('Customer', 'Payment screen: wallet balance and payment methods', {
@@ -1446,18 +1485,29 @@ const riderPaths = {
   },
   '/wallet': {
     get: appOp('Rider', 'Balance, dues, transactions', {
-      description: 'A negative balance is commission owed on cash trips: `dues`. `withdrawable` is the positive balance.',
+      description: 'A negative balance is commission owed on cash trips: `dues`. `withdrawable` is the positive balance; a payout needs at least `minWithdrawal`.',
       parameters: pageParams,
-      response: obj({ balance: money(350), currency: str({ example: 'INR' }), dues: money(), withdrawable: money(350), transactions: pagedOf(walletTransaction) }),
+      response: obj({
+        balance: money(350),
+        currency: str({ example: 'INR' }),
+        dues: money(),
+        withdrawable: money(350),
+        minWithdrawal: money(100),
+        transactions: pagedOf(walletTransaction),
+      }),
     }),
   },
   '/wallet/pay-dues': {
     post: appOp('Rider', 'Gateway order to clear dues', { body: obj({ amount: num({ description: 'Defaults to all dues' }) }), bodyRequired: false, response: gatewayOrder, status: 201, errors: [400, 409, 503] }),
   },
   '/payments/verify': { post: appOp('Rider', 'Verify a dues payment', { body: verifyBody, response: paymentVerified, errors: [400, 404] }) },
+  '/payments/orders/{orderId}': {
+    get: appOp('Rider', 'Payment status of a dues order', { description: paymentStatusDescription, parameters: [orderIdParam], response: paymentStatus, errors: [404, 502] }),
+  },
   '/withdrawals': {
     post: appOp('Rider', 'Request a payout to bank/UPI', {
-      description: 'Minimum `minWithdrawalAmount` (default ₹100). The amount is held from the wallet; one payout in progress at a time.',
+      description:
+        'From wallet earnings, minimum `minWithdrawal` (₹100 by default, set in admin Settings): `400` "Minimum withdrawal is ₹100" below it, `402` "You can withdraw up to ₹X" above the balance. The amount is held from the wallet until the admin pays or rejects it (rejected → back in the wallet). One payout in progress at a time (`409`).',
       body: obj(
         { amount: num(), method: enumOf(['bank', 'upi']), upiId: str({ example: 'name@okaxis' }), bankAccount: obj({ holderName: str(), accountNumber: str(), ifsc: str({ example: 'HDFC0001234' }) }) },
         ['amount', 'method'],
@@ -1512,6 +1562,18 @@ const invoicePdf = op('Public', 'Invoice PDF', { auth: false, parameters: [pathP
 invoicePdf.responses[200] = { description: 'Invoice PDF (opens in the browser)', content: { 'application/pdf': { schema: str({ format: 'binary' }) } } }
 
 const commonPaths = {
+  '/webhooks/razorpay': {
+    post: op('Common', 'Razorpay webhook (server to server)', {
+      auth: false,
+      description: [
+        'Set on the Razorpay Dashboard: this URL, events `payment.captured`, `order.paid`, `refund.processed` and `refund.failed`, and the secret in `RAZORPAY_WEBHOOK_SECRET`.',
+        'Verified with the `X-Razorpay-Signature` header over the raw body. Applies payments the app never confirmed (wallet credit or booking paid), exactly once.',
+        'Also subscribe to `refund.processed` and `refund.failed`: they update admin refunds, and a failed bank refund is credited to the customer wallet instead.',
+      ].join('\n\n'),
+      response: obj({ handled: bool() }),
+      errors: [400],
+    }),
+  },
   '/common/app-config': {
     get: op('Common', 'Min version, feature flags, support numbers', {
       auth: false,
@@ -1639,6 +1701,7 @@ export const openApiSpec = {
     { name: 'Commissions' },
     { name: 'Payments' },
     { name: 'Refunds' },
+    { name: 'Withdrawals', description: 'Rider payout requests' },
     { name: 'Wallets' },
     { name: 'Settlements' },
     { name: 'Coupons' },
@@ -2124,9 +2187,12 @@ export const openApiSpec = {
         amount: num(),
         reason: str(),
         requestedBy: str(),
-        status: enumOf(['requested', 'approved', 'rejected', 'processed']),
+        status: enumOf(['requested', 'approved', 'rejected', 'processing', 'processed']),
         approvedBy: oid(),
         processedAt: date({ nullable: true }),
+        destination: enumOf(['source', 'wallet'], { description: 'source = back to the original bank / card / UPI through Razorpay; wallet = customer wallet' }),
+        gatewayRefundId: str({ example: 'rfnd_FP8QHiV938haTz' }),
+        gatewayStatus: enumOf(['pending', 'processed', 'failed'], { description: 'Bank-side state of a source refund (updated by the Razorpay webhook)' }),
       }),
       Wallet: entity({
         ownerType: enumOf(['customer', 'driver', 'partner']),
@@ -2812,8 +2878,33 @@ export const openApiSpec = {
     '/refunds': {
       get: op('Refunds', 'List refunds', {
         permission: 'finance.view',
-        parameters: [...pageParams, query('status', 'Refund status', enumOf(['requested', 'approved', 'rejected', 'processed']))],
+        parameters: [...pageParams, query('status', 'Refund status', enumOf(['requested', 'approved', 'rejected', 'processing', 'processed']))],
         response: paginatedPageSize('Refund'),
+      }),
+      post: op('Refunds', 'Raise a refund for a paid booking', {
+        permission: 'finance.manage',
+        description: 'Creates a `requested` refund; it is sent only after approve + process. The amount cannot exceed what was paid minus refunds already raised.',
+        body: obj({ bookingCode: str({ example: 'BK-MV51VTQM74' }), bookingId: oid(), amount: num({ example: 120 }), reason: str({ example: 'Rider took a longer route' }) }, ['amount', 'reason']),
+        response: ref('Refund'),
+        status: 201,
+        errors: [400, 404, 409],
+      }),
+    },
+    '/refunds/booking-info': {
+      get: op('Refunds', 'How much of a booking can be refunded, and where it will go', {
+        permission: 'finance.view',
+        parameters: [query('bookingCode', 'Booking code', str({ example: 'BK-MV51VTQM74' })), query('bookingId', 'Booking id (instead of the code)', oid())],
+        response: obj({
+          bookingId: oid(),
+          bookingCode: str(),
+          customer: obj({ id: oid(), name: str(), phone: str() }),
+          paidTotal: num(),
+          paidVia: str({ example: 'online' }),
+          alreadyRefunded: num(),
+          maxRefundable: num(),
+          destination: enumOf(['source', 'wallet']),
+        }),
+        errors: [400, 404, 409],
       }),
     },
     '/refunds/{id}/approve': {
@@ -2837,10 +2928,14 @@ export const openApiSpec = {
     '/refunds/{id}/process': {
       patch: op('Refunds', 'Process an approved refund', {
         permission: 'finance.manage',
-        description: "Credits the refund amount to the customer's wallet (created if missing) and records a wallet transaction.",
+        description: [
+          'Booking paid online through Razorpay: refunded to the original bank / card / UPI with the Razorpay Refunds API (`destination: "source"`, `gatewayRefundId`). The customer sees it in 5-7 working days; if the bank rejects it, the webhook moves the money to the wallet.',
+          "Cash or wallet booking: credited to the customer's wallet (`destination: \"wallet\"`).",
+          'The customer gets a notification. `502` when Razorpay refuses the refund (the refund stays approved so it can be retried).',
+        ].join('\n\n'),
         parameters: [idParam],
         response: ref('Refund'),
-        errors: [400, 404],
+        errors: [400, 404, 409, 502, 503],
       }),
     },
     '/wallets': {
@@ -2880,6 +2975,37 @@ export const openApiSpec = {
         parameters: [idParam],
         response: ref('Settlement'),
         errors: [400, 404],
+      }),
+    },
+    '/withdrawals': {
+      get: op('Withdrawals', 'Rider payout requests', {
+        permission: 'finance.view',
+        description: 'Full bank account numbers are shown here so the admin can make the transfer.',
+        parameters: [...pageParams, query('status', 'Status', enumOf(['requested', 'processing', 'paid', 'rejected']))],
+        response: obj({ items: arr(adminWithdrawal), total: int(), page: int(), pageSize: int() }),
+      }),
+    },
+    '/withdrawals/{id}/processing': {
+      patch: op('Withdrawals', 'Mark a payout as being transferred', { permission: 'finance.manage', parameters: [idParam], response: adminWithdrawal, errors: [404, 409] }),
+    },
+    '/withdrawals/{id}/paid': {
+      patch: op('Withdrawals', 'Mark a payout as paid', {
+        permission: 'finance.manage',
+        description: 'After sending the money from the bank or UPI app. The rider is notified with the reference.',
+        parameters: [idParam],
+        body: obj({ reference: str({ example: '412345678901', description: 'UTR / transaction id' }) }, ['reference']),
+        response: adminWithdrawal,
+        errors: [400, 404, 409],
+      }),
+    },
+    '/withdrawals/{id}/reject': {
+      patch: op('Withdrawals', 'Reject a payout', {
+        permission: 'finance.manage',
+        description: "The held amount is credited back to the rider's wallet and the rider is notified with the reason.",
+        parameters: [idParam],
+        body: obj({ reason: str({ example: 'Bank account details do not match' }) }, ['reason']),
+        response: adminWithdrawal,
+        errors: [400, 404, 409],
       }),
     },
 

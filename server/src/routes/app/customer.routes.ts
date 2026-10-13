@@ -62,6 +62,7 @@ router.get('/wallet', payments.getWallet)
 router.post('/wallet/topup', payments.topUpWallet)
 router.post('/payments/order', payments.createPaymentOrder)
 router.post('/payments/verify', payments.verifyPayment)
+router.get('/payments/orders/:orderId', payments.getPaymentStatus)
 router.get('/payments/methods', account.listPaymentMethods)
 
 router.get('/offers', account.listOffers)

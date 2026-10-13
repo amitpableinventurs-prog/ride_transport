@@ -74,6 +74,7 @@ router.get('/earnings', trips.getEarnings)
 router.get('/wallet', wallet.getWallet)
 router.post('/wallet/pay-dues', wallet.payDues)
 router.post('/payments/verify', wallet.verifyPayment)
+router.get('/payments/orders/:orderId', wallet.getPaymentStatus)
 router.post('/withdrawals', wallet.requestWithdrawal)
 router.get('/withdrawals', wallet.listWithdrawals)
 

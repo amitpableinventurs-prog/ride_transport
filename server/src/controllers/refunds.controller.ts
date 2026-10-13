@@ -1,9 +1,8 @@
 import type { Request, Response } from 'express'
 import { Refund } from '../models/Refund'
-import { Booking } from '../models/Booking'
-import { Wallet } from '../models/Wallet'
-import { WalletTransaction } from '../models/WalletTransaction'
+import { createRefund as createRefundRecord, getRefundableInfo, processRefund as processRefundRecord } from '../services/refunds'
 import { recordAudit } from '../utils/audit'
+import { parseAmount, requireString } from '../utils/http'
 
 function parsePagination(query: Record<string, string>) {
   const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1)
@@ -70,49 +69,28 @@ export async function rejectRefund(req: Request, res: Response) {
   res.json(refund)
 }
 
+// GET /refunds/booking-info?bookingCode=: amount left to refund and where it will go.
+export async function getRefundBookingInfo(req: Request, res: Response) {
+  const query = req.query as Record<string, string>
+  res.json(await getRefundableInfo({ bookingCode: query.bookingCode, bookingId: query.bookingId }))
+}
+
+// POST /refunds: an admin raises a refund for a paid booking; it then goes through approve and process.
+export async function createRefund(req: Request, res: Response) {
+  const body = (req.body ?? {}) as Record<string, unknown>
+  const amount = parseAmount(body.amount, 'amount', { min: 1, max: 100_000 })
+  const reason = requireString(body.reason, 'reason', 300)
+  const refund = await createRefundRecord({ bookingCode: body.bookingCode, bookingId: body.bookingId, amount, reason, requestedBy: req.admin!.name || req.admin!.email })
+  await recordAudit(req.admin!, 'refund.created', 'Refund', String(refund._id), { amount })
+  res.status(201).json(await refund.populate({ path: 'booking', select: 'bookingCode' }))
+}
+
+// PATCH /refunds/:id/process: online payments go back to the bank / card through Razorpay, others to the wallet.
 export async function processRefund(req: Request, res: Response) {
-  const refund = await Refund.findById(req.params.id)
-  if (!refund) {
-    res.status(404).json({ message: 'Refund not found' })
-    return
-  }
-  if (refund.status !== 'approved') {
-    res.status(400).json({ message: 'Only approved refunds can be processed' })
-    return
-  }
-
-  const booking = await Booking.findById(refund.booking).select('customer bookingCode')
-  if (!booking) {
-    res.status(404).json({ message: 'Related booking not found' })
-    return
-  }
-
-  let wallet = await Wallet.findOne({ ownerType: 'customer', ownerId: booking.customer })
-  if (!wallet) {
-    wallet = await Wallet.create({ ownerType: 'customer', ownerId: booking.customer, balance: 0, currency: 'INR' })
-  }
-
-  const updatedWallet = await Wallet.findByIdAndUpdate(wallet._id, { $inc: { balance: refund.amount } }, { new: true })
-  if (!updatedWallet) {
-    res.status(500).json({ message: 'Could not credit customer wallet' })
-    return
-  }
-
-  await WalletTransaction.create({
-    wallet: wallet._id,
-    type: 'credit',
-    amount: refund.amount,
-    reason: 'refund',
-    referenceType: 'Refund',
-    referenceId: refund._id,
-    balanceAfter: updatedWallet.balance,
-    createdBy: req.admin!._id,
+  const { refund, bookingCode } = await processRefundRecord(String(req.params.id))
+  await recordAudit(req.admin!, 'refund.processed', 'Refund', `${bookingCode} - ${refund.amount}`, {
+    destination: refund.destination,
+    ...(refund.gatewayRefundId ? { gatewayRefundId: refund.gatewayRefundId } : {}),
   })
-
-  refund.status = 'processed'
-  refund.processedAt = new Date()
-  await refund.save()
-
-  await recordAudit(req.admin!, 'refund.processed', 'Refund', `${booking.bookingCode} - ${refund.amount}`)
-  res.json(refund)
+  res.json(await refund.populate({ path: 'booking', select: 'bookingCode' }))
 }

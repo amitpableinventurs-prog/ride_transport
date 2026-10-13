@@ -21,6 +21,7 @@ import { TransactionsPage } from '@/pages/finance/TransactionsPage'
 import { WalletsPage } from '@/pages/finance/WalletsPage'
 import { CommissionsPage } from '@/pages/finance/CommissionsPage'
 import { RefundsPage } from '@/pages/finance/RefundsPage'
+import { WithdrawalsPage } from '@/pages/finance/WithdrawalsPage'
 import { SettlementsPage } from '@/pages/finance/SettlementsPage'
 import { RidePricingPage } from '@/pages/pricing/RidePricingPage'
 import { TransportPricingPage } from '@/pages/pricing/TransportPricingPage'
@@ -71,6 +72,7 @@ const PAGES: Record<string, ComponentType> = {
   '/finance/wallets': WalletsPage,
   '/finance/commissions': CommissionsPage,
   '/finance/refunds': RefundsPage,
+  '/finance/withdrawals': WithdrawalsPage,
   '/finance/settlements': SettlementsPage,
   '/pricing/ride': RidePricingPage,
   '/pricing/transport': TransportPricingPage,

@@ -5,6 +5,7 @@ import { connectDb } from './config/db'
 import { env } from './config/env'
 import { initRealtime } from './realtime/socket'
 import { startDispatchSweeper } from './services/dispatch'
+import { startGatewayReconciler } from './services/gatewayPayments'
 
 const SHUTDOWN_GRACE_MS = 10_000
 
@@ -20,6 +21,7 @@ async function main() {
 
   const io = initRealtime(server)
   startDispatchSweeper()
+  startGatewayReconciler()
   server.on('error', (err: NodeJS.ErrnoException) => {
     console.error(err.code === 'EADDRINUSE' ? `[server] port ${env.port} is already in use: stop the other server first` : '[server] error', err.code === 'EADDRINUSE' ? '' : err)
     process.exit(1)

@@ -73,6 +73,8 @@ export const env = {
   paymentProvider: process.env.PAYMENT_PROVIDER ?? 'mock',
   razorpayKeyId: process.env.RAZORPAY_KEY_ID ?? '',
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET ?? '',
+  // Secret set on the Razorpay Dashboard webhook (POST /api/v1/webhooks/razorpay); empty disables the webhook.
+  razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET ?? '',
   // Push notifications: "console" prints them, "fcm" sends through Firebase (src/utils/fcm.ts).
   pushProvider: process.env.PUSH_PROVIDER ?? 'console',
   // The customer and rider apps are separate Firebase projects: one service account key each,

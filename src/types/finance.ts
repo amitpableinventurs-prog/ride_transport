@@ -100,7 +100,7 @@ export interface WalletTransaction {
   createdAt: string
 }
 
-export type RefundStatus = 'requested' | 'approved' | 'rejected' | 'processed'
+export type RefundStatus = 'requested' | 'approved' | 'rejected' | 'processing' | 'processed'
 
 export interface Refund {
   id: string
@@ -111,6 +111,38 @@ export interface Refund {
   status: RefundStatus
   requestedBy?: string
   approvedBy?: string | null
+  processedAt?: string | null
+  /** source = back to the original bank / card / UPI through Razorpay; wallet = customer's AnZ Cabs wallet */
+  destination?: 'source' | 'wallet'
+  gatewayRefundId?: string
+  gatewayStatus?: 'pending' | 'processed' | 'failed'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RefundBookingInfo {
+  bookingId: string
+  bookingCode: string
+  customer: { id: string; name: string; phone: string } | null
+  paidTotal: number
+  paidVia: string
+  alreadyRefunded: number
+  maxRefundable: number
+  destination: 'source' | 'wallet'
+}
+
+export type WithdrawalStatus = 'requested' | 'processing' | 'paid' | 'rejected'
+
+export interface Withdrawal {
+  id: string
+  driver: { id: string; name: string; phone: string } | null
+  amount: number
+  method: 'bank' | 'upi'
+  upiId?: string
+  bankAccount?: { holderName?: string; accountNumber?: string; ifsc?: string }
+  status: WithdrawalStatus
+  reference?: string
+  rejectionReason?: string
   processedAt?: string | null
   createdAt: string
   updatedAt: string

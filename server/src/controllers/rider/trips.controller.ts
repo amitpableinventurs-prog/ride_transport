@@ -11,6 +11,7 @@ import {
   activeVehicleFor,
   completeTrip,
   CUSTOMER_PUBLIC_FIELDS,
+  CUSTOMER_TRIP_FIELDS,
   parseScore,
   refreshAverageRating,
   serializeBooking,
@@ -40,7 +41,7 @@ async function findOwnBooking(req: Request) {
 }
 
 async function riderView(bookingId: string) {
-  const booking = (await Booking.findById(bookingId).populate('customer', CUSTOMER_PUBLIC_FIELDS).populate('vehicle', VEHICLE_PUBLIC_FIELDS)) as BookingDoc
+  const booking = (await Booking.findById(bookingId).populate('customer', CUSTOMER_TRIP_FIELDS).populate('vehicle', VEHICLE_PUBLIC_FIELDS)) as BookingDoc
   return serializeBooking(booking, { viewer: 'rider' })
 }
 

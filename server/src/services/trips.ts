@@ -2,7 +2,7 @@
 import crypto from 'crypto'
 import { awardReferralReward } from '../utils/referral'
 import type { HydratedDocument, Types } from 'mongoose'
-import { Booking, type BookingDocument } from '../models/Booking'
+import { ACTIVE_TRIP_STATUSES, Booking, type BookingDocument } from '../models/Booking'
 import { Customer } from '../models/Customer'
 import { Driver } from '../models/Driver'
 import { Payment } from '../models/Payment'
@@ -75,7 +75,8 @@ export function serializeBooking(booking: BookingDoc, { viewer }: SerializeOptio
   if (viewer === 'rider') {
     delete json.startOtp
     json.stops = (json.stops ?? []).map(({ otp: _otp, ...stop }) => stop)
-    json.customer = maskPerson(json.customer)
+    // The rider sees the customer's phone only while the trip is active, so they can call them.
+    json.customer = maskPerson(json.customer, { keepPhone: ACTIVE_TRIP_STATUSES.includes(booking.status) })
   } else {
     delete json.settlement
     json.driver = maskPerson(json.driver)
@@ -83,15 +84,18 @@ export function serializeBooking(booking: BookingDoc, { viewer }: SerializeOptio
   return json
 }
 
-// Phone numbers are never shared between customer and rider; calls go through /call.
-function maskPerson(person: unknown) {
+// The rider's phone is never shown to the customer (calls go through /call); the customer's
+// phone is shown to their rider during an active trip.
+function maskPerson(person: unknown, { keepPhone = false } = {}) {
   if (!person || typeof person !== 'object') return person
-  const { phone: _phone, email: _email, ...rest } = person as Record<string, unknown>
-  return rest
+  const { phone, email: _email, ...rest } = person as Record<string, unknown>
+  return keepPhone ? { ...rest, phone } : rest
 }
 
 export const RIDER_PUBLIC_FIELDS = 'name rating photoUrl currentLocation'
 export const CUSTOMER_PUBLIC_FIELDS = 'name rating photoUrl'
+/** What the rider loads about the customer for one trip; the phone is dropped outside an active trip. */
+export const CUSTOMER_TRIP_FIELDS = `${CUSTOMER_PUBLIC_FIELDS} phone`
 export const VEHICLE_PUBLIC_FIELDS = 'registrationNumber model manufacturer categoryKey'
 
 /** The vehicle a rider drives: the admin-assigned one, else their latest active vehicle. */

@@ -354,7 +354,13 @@ const { otp: _stopOtp, ...riderStopFields } = bookingStop.properties
 const riderBooking = obj({
   ...bookingCommon,
   stops: { ...arr(obj(riderStopFields)), description: 'Transport drops in order (no OTPs for the rider)' },
-  customer: obj({ id: oid(), name: str({ example: 'Meera Joshi' }), rating: num({ example: 4.5 }), photoUrl: str() }),
+  customer: obj({
+    id: oid(),
+    name: str({ example: 'Meera Joshi' }),
+    rating: num({ example: 4.5 }),
+    photoUrl: str(),
+    phone: str({ example: '9876543210', description: 'Only while the trip is active (accepted → started / in_transit), on single-trip responses; absent once it is completed or cancelled and in the trip history list' }),
+  }),
   driver: oid(),
   vehicle: { ...bookingVehicle, description: 'Populated on trip actions; only the vehicle id in GET /bookings (history)' },
   settlement: obj({ commission: money(14.39), riderEarning: money(129.46) }),

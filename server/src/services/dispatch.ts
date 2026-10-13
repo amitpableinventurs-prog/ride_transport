@@ -17,6 +17,8 @@ type BookingDoc = HydratedDocument<BookingDocument>
 /** Riders whose last location is older than this are not offered bookings. */
 const LOCATION_FRESH_MS = 5 * 60 * 1000
 const SWEEP_INTERVAL_MS = 15 * 1000
+/** Riders within this distance of the pickup are offered the booking first; farther riders only after they are exhausted. */
+const PREFERRED_RADIUS_KM = 0.5
 
 const timers = new Map<string, NodeJS.Timeout>()
 
@@ -117,11 +119,12 @@ export async function offerNext(bookingId: string): Promise<void> {
     return markNoRiderFound(bookingId, 'No rider accepted after dispatch attempts')
   }
 
-  const [candidate] = await findNearbyRiders(
-    { lat: booking.pickup!.lat!, lng: booking.pickup!.lng! },
-    booking.categoryKey,
-    { radiusKm: settings.dispatchRadiusKm, exclude: booking.rejectedBy, limit: 1 },
-  )
+  const pickup = { lat: booking.pickup!.lat!, lng: booking.pickup!.lng! }
+  // Prefer a rider within 500 m; only widen to the full dispatch radius once no nearby rider is available.
+  let [candidate] = await findNearbyRiders(pickup, booking.categoryKey, { radiusKm: PREFERRED_RADIUS_KM, exclude: booking.rejectedBy, limit: 1 })
+  if (!candidate && settings.dispatchRadiusKm > PREFERRED_RADIUS_KM) {
+    ;[candidate] = await findNearbyRiders(pickup, booking.categoryKey, { radiusKm: settings.dispatchRadiusKm, exclude: booking.rejectedBy, limit: 1 })
+  }
   if (!candidate) {
     return markNoRiderFound(bookingId, `No eligible online rider found within ${settings.dispatchRadiusKm} km`)
   }

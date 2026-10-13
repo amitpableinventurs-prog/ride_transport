@@ -7,6 +7,7 @@ import { ServiceCategory } from '../../models/ServiceCategory'
 import { nearbyAvailability } from './account.controller'
 import { findServiceArea, haversineKm, parseLatLng, type LatLng } from '../../utils/geo'
 import { HttpError, requireString } from '../../utils/http'
+import { reverseGeocodeAddress, searchPlacesText } from '../../utils/maps'
 import { ensureReferralCode } from '../../utils/referral'
 import { getPlatformSettings } from '../../utils/settings'
 
@@ -16,6 +17,9 @@ const customerDoc = (req: Request) => req.appUser!.doc as CustomerDoc
 const RECENT_LIMIT = 6
 const SAME_PLACE_KM = 0.05
 const REVERSE_MATCH_KM = 0.2
+const SEARCH_LIMIT = 10
+// Shorter queries match only the customer's own places, so typing doesn't hit Google on every key.
+const MAPS_SEARCH_MIN_CHARS = 3
 
 interface PlaceItem extends LatLng {
   name: string
@@ -77,34 +81,36 @@ export async function listRecentPlaces(req: Request, res: Response) {
   res.json(await recentPlaces(customerDoc(req), limit))
 }
 
-// GET /places/search?q=&lat=&lng=: matches the customer's saved and recent places. No maps provider is wired in,
-// so the app uses its own Places SDK for the wider map search and this for personal suggestions.
+// GET /places/search?q=&lat=&lng=: the customer's saved and recent places that match first, then Google Places results.
 export async function searchPlaces(req: Request, res: Response) {
-  const q = requireString(req.query.q, 'q', 100).toLowerCase()
+  const query = requireString(req.query.q, 'q', 100)
+  const q = query.toLowerCase()
   const customer = customerDoc(req)
   const origin = parseLatLng(req.query.lat, req.query.lng)
   const saved: PlaceItem[] = customer.savedPlaces.map((p) => ({ name: p.name || p.label[0].toUpperCase() + p.label.slice(1), address: p.address, lat: p.lat, lng: p.lng, favouriteId: p.id }))
-  const recent = await recentPlaces(customer, 20)
+  const [recent, found] = await Promise.all([recentPlaces(customer, 20), q.length >= MAPS_SEARCH_MIN_CHARS ? searchPlacesText(query, origin) : []])
+  const fromMaps: PlaceItem[] = found.map((p) => ({ name: p.name, address: p.address, lat: p.lat, lng: p.lng, favouriteId: favouriteFor(customer, p, p.address)?.id ?? null }))
   const seen = new Set<string>()
-  const results = [...saved, ...recent]
-    .filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q))
+  const results = [...[...saved, ...recent].filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q)), ...fromMaps]
     .filter((p) => !seen.has(p.address.toLowerCase()) && seen.add(p.address.toLowerCase()))
     .map((p) => ({ ...p, distanceKm: origin ? Math.round(haversineKm(origin, p) * 10) / 10 : null }))
-  res.json(results.slice(0, 10))
+  res.json(results.slice(0, SEARCH_LIMIT))
 }
 
-// GET /places/reverse?lat=&lng=: the address label under the "Pickup Point" pin. Uses known places within 200 m,
-// otherwise only the service-area city, since there is no geocoding provider yet.
+// GET /places/reverse?lat=&lng=: the address label under the "Pickup Point" pin. The customer's own place when the pin
+// is on it, else Google's street address, else a known place within 200 m; `city` is the service area's.
 export async function reverseGeocode(req: Request, res: Response) {
   const point = parseLatLng(req.query.lat, req.query.lng)
   if (!point) throw new HttpError(400, 'lat and lng query parameters are required')
   const customer = customerDoc(req)
-  const [area, recent] = await Promise.all([findServiceArea(point), recentPlaces(customer, 20)])
+  const [area, recent, street] = await Promise.all([findServiceArea(point), recentPlaces(customer, 20), reverseGeocodeAddress(point)])
   const known = [...customer.savedPlaces.map((p) => ({ address: p.address, lat: p.lat, lng: p.lng })), ...recent]
     .map((p) => ({ p, d: haversineKm(point, p) }))
     .filter((x) => x.d <= REVERSE_MATCH_KM)
     .sort((a, b) => a.d - b.d)[0]
-  res.json({ ...point, address: known?.p.address ?? null, city: area?.city ?? null, serviceable: Boolean(area) })
+  const onKnownPlace = known && known.d <= SAME_PLACE_KM
+  const address = (onKnownPlace ? known.p.address : street) ?? known?.p.address ?? null
+  res.json({ ...point, address, city: area?.city ?? null, serviceable: Boolean(area) })
 }
 
 // ---------- Refer & Earn ----------

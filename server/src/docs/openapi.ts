@@ -864,9 +864,9 @@ const customerPaths = {
     }),
   },
   '/places/search': {
-    get: appOp('Customer', 'Search saved and recent places', {
+    get: appOp('Customer', 'Search places (own places, then Google)', {
       response: arr(obj({ ...placeItem.properties, distanceKm: { type: 'number', nullable: true } })),
-      description: 'Pickup/drop search box. Matches the customer\'s own places only; use the map SDK for city-wide search.',
+      description: 'Pickup/drop search box: the customer\'s matching saved and recent places first, then Google Places results (queries of 3+ characters; debounce typing in the app). Up to 10 results.',
       parameters: [query('q', 'Text to match in name or address (required)'), query('lat', 'Latitude for `distanceKm`', num()), query('lng', 'Longitude for `distanceKm`', num())],
       errors: [400],
     }),
@@ -874,7 +874,7 @@ const customerPaths = {
   '/places/reverse': {
     get: appOp('Customer', 'Address under the pickup pin', {
       response: reverseResponse,
-      description: 'Known address within 200 m (saved or recent), else `address: null` with the service-area `city`. A geocoding provider is not wired in yet.',
+      description: 'The saved/recent place when the pin is within 50 m of it, else the Google street address, else a known place within 200 m, else `address: null`. `city` is from the service area.',
       parameters: [query('lat', 'Latitude', num()), query('lng', 'Longitude', num())],
       errors: [400],
     }),
@@ -937,7 +937,7 @@ const customerPaths = {
   '/fare-estimate': {
     post: appOp('Customer', 'Fare per category for pickup, drops and goods', {
       description:
-        'Rides have one drop; transport up to 5. Optional `mode`, `categoryKey`, `couponCode`, `scheduledAt`. Distance is estimated (straight line × 1.3) until a maps provider is added.',
+        'Rides have one drop; transport up to 5. Optional `mode`, `categoryKey`, `couponCode`, `scheduledAt`. Distance and duration are Google road values (Routes API); without a key or when Google fails, straight line × 1.3 at 25 km/h.',
       body: obj({ ...tripBody, mode: enumOf(SERVICE_MODE), categoryKey: str(), couponCode: str(), scheduledAt: date() }, ['pickup']),
       response: obj({
         serviceArea: serviceAreaRef,

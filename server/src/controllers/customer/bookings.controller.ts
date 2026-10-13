@@ -26,7 +26,8 @@ import {
 import { isProfileComplete } from '../../utils/appUsers'
 import { applyCoupon } from '../../utils/coupons'
 import { computeFare, findPricingRule } from '../../utils/fare'
-import { etaMinutes, findServiceArea, parsePlace, routeDistanceKm, travelMinutes, type Place } from '../../utils/geo'
+import { etaMinutes, findServiceArea, parsePlace, type Place } from '../../utils/geo'
+import { routeMetrics } from '../../utils/maps'
 import { HttpError, optionalString, parseAmount, parseDate, parsePagination, requireObjectId, requireString } from '../../utils/http'
 import { signInvoiceToken } from '../../utils/jwt'
 import { notifyUser } from '../../utils/notify'
@@ -100,16 +101,15 @@ function parseTripInput(body: Record<string, unknown>): TripInput {
   return { pickup, drops, goods }
 }
 
-function routeFor(mode: 'ride' | 'transport', trip: TripInput) {
+async function routeFor(mode: 'ride' | 'transport', trip: TripInput) {
   const points = mode === 'ride' ? [trip.pickup, trip.drops[0]] : [trip.pickup, ...trip.drops]
-  const distanceKm = routeDistanceKm(points)
-  return { distanceKm, durationMin: travelMinutes(distanceKm), extraStops: mode === 'transport' ? trip.drops.length - 1 : 0 }
+  return { ...(await routeMetrics(points)), extraStops: mode === 'transport' ? trip.drops.length - 1 : 0 }
 }
 
 async function priceCategory(category: HydratedDocument<ServiceCategoryDocument>, trip: TripInput, serviceAreaId: BookingDocument['serviceArea'], at?: Date) {
   const rule = await findPricingRule(category.key, serviceAreaId)
   if (!rule) return null
-  const route = routeFor(category.mode, trip)
+  const route = await routeFor(category.mode, trip)
   return { ...route, fare: computeFare(rule, { ...route, needsLoading: category.mode === 'transport' && trip.goods?.needsLoading, at }) }
 }
 

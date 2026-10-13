@@ -83,6 +83,9 @@ export const env = {
   fcmRiderServiceAccount: process.env.FIREBASE_RIDER_SERVICE_ACCOUNT ?? '',
   // Masked calling: "direct" returns the real number (development only). Add Exotel etc. in src/utils/telephony.ts.
   telephonyProvider: process.env.TELEPHONY_PROVIDER ?? 'direct',
+  // Google Maps Platform server key (Routes, Geocoding, Places API (New)). Empty: distances are
+  // estimated from the straight line and place search / reverse geocoding use only the customer's own places.
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
   // Rider app store link for the customer app's "Earn money with anzcabs" banner.
   riderAppUrl: process.env.RIDER_APP_URL ?? '',
 

@@ -15,8 +15,8 @@ export interface Place extends LatLng {
   address?: string
 }
 
-// No maps provider is wired in yet, so road distance is estimated from the
-// straight-line distance and duration from an average city speed.
+// Fallback when Google Maps (utils/maps) is not configured or fails, and for frequent ETA updates:
+// road distance estimated from the straight-line distance, duration from an average city speed.
 const ROAD_FACTOR = 1.3
 const AVG_CITY_SPEED_KMPH = 25
 

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fetchBookings } from '@/api/bookings'
 import type { Booking } from '@/types/booking'
 import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
+import { LiveRidersMap, type MapPoint } from '@/components/maps/LiveRidersMap'
+import { googleMapsConfigured } from '@/lib/googleMaps'
 
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
 const LIVE_STATUSES = 'accepted,arriving,arrived,started,in_transit'
@@ -57,6 +59,7 @@ export function LiveTrackingPage() {
   const [bookings, setBookings] = useState<Booking[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [activePoint, setActivePoint] = useState<string | null>(null)
+  const [mapError, setMapError] = useState<string | null>(googleMapsConfigured ? null : 'Google Maps key is not configured.')
 
   const load = useCallback(() => {
     fetchBookings({ status: LIVE_STATUSES, limit: 100 })
@@ -72,9 +75,23 @@ export function LiveTrackingPage() {
     return () => clearInterval(interval)
   }, [load])
 
+  const points = useMemo(() => (bookings ? buildPoints(bookings) : []), [bookings])
+  const mapPoints = useMemo<MapPoint[]>(
+    () =>
+      points.map((p) => ({
+        id: p.bookingId,
+        lat: p.lat,
+        lng: p.lng,
+        color: STATUS_COLOR[p.status] ?? '#1f2f52',
+        title: p.bookingCode,
+        subtitle: p.driverName,
+        status: p.status,
+      })),
+    [points],
+  )
+
   if (!bookings) return <LoadingScreen />
 
-  const points = buildPoints(bookings)
   const lats = points.map((p) => p.lat)
   const lngs = points.map((p) => p.lng)
   const minLat = points.length ? Math.min(...lats) : 0
@@ -102,42 +119,47 @@ export function LiveTrackingPage() {
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}
 
-      <div className="rounded-2xl border border-navy-100 bg-white p-5 shadow-sm">
-        <p className="mb-3 text-xs text-navy-400">
-          Simplified visualization — swap in Google Maps or another map SDK for real geo-rendering.
-        </p>
-        <div className="relative mx-auto h-[400px] w-full max-w-[600px] overflow-hidden rounded-xl border border-navy-100 bg-navy-50">
-          <p className="absolute left-2 top-2 text-[10px] font-medium uppercase tracking-wide text-navy-300">
-            Live positions (simplified view)
-          </p>
-          {points.length === 0 && (
-            <p className="flex h-full items-center justify-center px-6 text-center text-sm text-navy-300">
-              No active bookings with location data.
-            </p>
-          )}
-          {points.map((p) => (
-            <button
-              key={p.bookingId}
-              type="button"
-              onClick={() => setActivePoint((prev) => (prev === p.bookingId ? null : p.bookingId))}
-              className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white"
-              style={{ ...positionFor(p), backgroundColor: STATUS_COLOR[p.status] ?? '#1f2f52' }}
-              title={`${p.bookingCode} · ${p.driverName}`}
-              aria-label={`${p.bookingCode} — ${p.driverName}`}
-            />
-          ))}
-          {activePointData && (
-            <div
-              className="absolute z-10 w-48 rounded-lg border border-navy-100 bg-white p-2.5 text-xs shadow-lg"
-              style={{ ...positionFor(activePointData), transform: 'translate(-50%, -110%)' }}
-            >
-              <p className="font-semibold text-navy-800">{activePointData.bookingCode}</p>
-              <p className="text-navy-500">{activePointData.driverName}</p>
-              <Badge tone={statusTone(activePointData.status)}>{activePointData.status}</Badge>
-            </div>
-          )}
+      {!mapError ? (
+        <div className="rounded-2xl border border-navy-100 bg-white p-5 shadow-sm">
+          <LiveRidersMap points={mapPoints} onUnavailable={setMapError} />
+          {points.length === 0 && <p className="mt-3 text-center text-sm text-navy-300">No active bookings with location data.</p>}
         </div>
-      </div>
+      ) : (
+        <div className="rounded-2xl border border-navy-100 bg-white p-5 shadow-sm">
+          <p className="mb-3 text-xs text-navy-400">{mapError} Showing a simplified view instead.</p>
+          <div className="relative mx-auto h-[400px] w-full max-w-[600px] overflow-hidden rounded-xl border border-navy-100 bg-navy-50">
+            <p className="absolute left-2 top-2 text-[10px] font-medium uppercase tracking-wide text-navy-300">
+              Live positions (simplified view)
+            </p>
+            {points.length === 0 && (
+              <p className="flex h-full items-center justify-center px-6 text-center text-sm text-navy-300">
+                No active bookings with location data.
+              </p>
+            )}
+            {points.map((p) => (
+              <button
+                key={p.bookingId}
+                type="button"
+                onClick={() => setActivePoint((prev) => (prev === p.bookingId ? null : p.bookingId))}
+                className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white"
+                style={{ ...positionFor(p), backgroundColor: STATUS_COLOR[p.status] ?? '#1f2f52' }}
+                title={`${p.bookingCode} · ${p.driverName}`}
+                aria-label={`${p.bookingCode} — ${p.driverName}`}
+              />
+            ))}
+            {activePointData && (
+              <div
+                className="absolute z-10 w-48 rounded-lg border border-navy-100 bg-white p-2.5 text-xs shadow-lg"
+                style={{ ...positionFor(activePointData), transform: 'translate(-50%, -110%)' }}
+              >
+                <p className="font-semibold text-navy-800">{activePointData.bookingCode}</p>
+                <p className="text-navy-500">{activePointData.driverName}</p>
+                <Badge tone={statusTone(activePointData.status)}>{activePointData.status}</Badge>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-2xl border border-navy-100 bg-white shadow-sm">
         <table className="w-full min-w-[640px] text-left text-sm">

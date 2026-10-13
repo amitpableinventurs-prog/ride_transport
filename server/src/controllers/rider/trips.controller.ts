@@ -18,8 +18,8 @@ import {
   settleBookingPayment,
   VEHICLE_PUBLIC_FIELDS,
 } from '../../services/trips'
-import { etaMinutes } from '../../utils/geo'
 import { HttpError, optionalString, parseDate, parsePagination, requireObjectId, requireString, roundMoney } from '../../utils/http'
+import { roadEtaMinutes } from '../../utils/maps'
 import { notifyUser } from '../../utils/notify'
 import { getPlatformSettings } from '../../utils/settings'
 import { uploadedFileUrl } from '../../utils/uploads'
@@ -99,7 +99,7 @@ export async function acceptRequest(req: Request, res: Response) {
   stopDispatch(booking.id)
   joinBookingRoom(booking.id, { customerId: booking.customer, driverId: driver._id })
   const loc = driver.currentLocation
-  const etaMin = loc?.lat != null && loc.lng != null ? etaMinutes({ lat: loc.lat, lng: loc.lng }, { lat: booking.pickup!.lat!, lng: booking.pickup!.lng! }) : null
+  const etaMin = loc?.lat != null && loc.lng != null ? await roadEtaMinutes({ lat: loc.lat, lng: loc.lng }, { lat: booking.pickup!.lat!, lng: booking.pickup!.lng! }) : null
   emitBookingEvent(
     booking.id,
     'booking:rider_assigned',

@@ -9,8 +9,9 @@ import { Payment } from '../models/Payment'
 import { Rating } from '../models/Rating'
 import { Vehicle } from '../models/Vehicle'
 import { computeCommission, computeFare, findPricingRule, type FareBreakdown } from '../utils/fare'
-import { routeDistanceKm, travelMinutes, type LatLng } from '../utils/geo'
+import type { LatLng } from '../utils/geo'
 import { HttpError, roundMoney } from '../utils/http'
+import { routeMetrics } from '../utils/maps'
 import { creditWallet, debitWallet } from '../utils/wallet'
 
 type BookingDoc = HydratedDocument<BookingDocument>
@@ -38,8 +39,7 @@ export function routePoints(booking: Pick<BookingDocument, 'pickup' | 'drop' | '
 export async function repriceBooking(booking: BookingDoc, opts: { waitingMin?: number } = {}): Promise<FareBreakdown> {
   const rule = await findPricingRule(booking.categoryKey, booking.serviceArea)
   if (!rule) throw new HttpError(409, 'Pricing is not configured for this vehicle category')
-  const distanceKm = routeDistanceKm(routePoints(booking))
-  const durationMin = travelMinutes(distanceKm)
+  const { distanceKm, durationMin } = await routeMetrics(routePoints(booking))
   const fare = computeFare(rule, {
     distanceKm,
     durationMin,

@@ -140,6 +140,7 @@ export async function handleRazorpayWebhook(rawBody: Buffer, signature: string) 
     event?: string
     payload?: {
       payment?: { entity?: { id?: string; order_id?: string; status?: string } }
+      order?: { entity?: { id?: string } }
       refund?: { entity?: { id?: string } }
     }
   }
@@ -152,14 +153,25 @@ export async function handleRazorpayWebhook(rawBody: Buffer, signature: string) 
   if (event.event !== 'payment.captured' && event.event !== 'order.paid') return { handled: false }
 
   const payment = event.payload?.payment?.entity
-  if (!payment?.id || !payment.order_id || payment.status !== 'captured') return { handled: false }
+  const orderEntity = event.payload?.order?.entity
+  const orderId = payment?.order_id ?? orderEntity?.id
+  if (!orderId) return { handled: false }
 
-  const order = await GatewayOrder.findOne({ providerOrderId: payment.order_id, provider: 'razorpay' })
+  const order = await GatewayOrder.findOne({ providerOrderId: orderId, provider: 'razorpay' })
   if (!order) {
-    console.warn('[payments:webhook] unknown order', payment.order_id)
+    console.warn('[payments:webhook] unknown order', orderId)
     return { handled: false }
   }
-  await applyPaidOrder(order, payment.id)
+
+  if (event.event === 'payment.captured') {
+    if (!payment?.id || payment.status !== 'captured') return { handled: false }
+    await applyPaidOrder(order, payment.id)
+    return { handled: true }
+  }
+
+  const paymentId = await provider.findCapturedPayment(orderId)
+  if (!paymentId) return { handled: false }
+  await applyPaidOrder(order, paymentId)
   return { handled: true }
 }
 

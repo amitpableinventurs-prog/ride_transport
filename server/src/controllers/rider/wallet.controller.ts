@@ -27,6 +27,8 @@ export async function getWallet(req: Request, res: Response) {
     balance: wallet.balance,
     currency: wallet.currency,
     dues: Math.max(0, -wallet.balance),
+    duesLimit: settings.maxCashDues,
+    duesLimitReached: -wallet.balance > settings.maxCashDues,
     withdrawable: Math.max(0, wallet.balance),
     minWithdrawal: settings.minWithdrawalAmount,
     transactions: { items: transactions, total, page, limit },

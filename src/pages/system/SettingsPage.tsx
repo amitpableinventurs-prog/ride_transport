@@ -131,6 +131,24 @@ export function SettingsPage() {
             </div>
           </div>
 
+          <div className="rounded-2xl border border-navy-100 bg-white p-5 shadow-sm">
+            <h2 className="mb-4 text-sm font-semibold text-navy-800">Rider dues</h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Cash dues limit (₹)">
+                <input
+                  type="number"
+                  min={0}
+                  value={settings.maxCashDues}
+                  onChange={(e) => update('maxCashDues', Number(e.target.value))}
+                  className="input"
+                />
+              </Field>
+            </div>
+            <p className="mt-3 text-xs text-navy-500">
+              Commission on cash trips is owed by the rider. Above this amount the rider is taken offline and cannot go online until the dues are paid.
+            </p>
+          </div>
+
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}
 
           <PermissionGate permission="settings.manage">

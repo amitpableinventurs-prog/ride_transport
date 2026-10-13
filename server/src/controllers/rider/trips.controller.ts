@@ -6,6 +6,7 @@ import { Driver, type DriverDocument } from '../../models/Driver'
 import { Rating } from '../../models/Rating'
 import { emitBookingEvent, joinBookingRoom, leaveBookingRoom } from '../../realtime/socket'
 import { rejectOffer, requestPayload, startDispatch, stopDispatch } from '../../services/dispatch'
+import { enforceDuesLimit } from '../../services/riderDues'
 import {
   activeVehicleFor,
   completeTrip,
@@ -194,6 +195,8 @@ export async function completeBooking(req: Request, res: Response) {
     body: `Total fare ₹${completed.fare?.total}. ${completed.paymentStatus === 'paid' ? 'Paid.' : completed.paymentMethod === 'cash' ? 'Please pay the rider in cash.' : 'Please complete the payment in the app.'}`,
     data: { bookingId: completed.id, type: 'trip_completed' },
   })
+  // completeTrip puts the rider back online: take them offline again if their dues are over the limit.
+  await enforceDuesLimit(completed.driver!).catch((err) => console.error('[dues] limit check failed', err))
 
   res.json({
     booking: await riderView(completed.id),
@@ -209,6 +212,8 @@ export async function confirmCashCollected(req: Request, res: Response) {
   if (booking.status !== 'completed') throw new HttpError(409, 'Complete the trip first')
   if (booking.paymentStatus !== 'pending') throw new HttpError(409, 'This booking is already paid')
   await settleBookingPayment(booking.id, { method: 'cash' })
+  // The commission on this trip is now dues; past the limit the rider goes offline.
+  await enforceDuesLimit(booking.driver!).catch((err) => console.error('[dues] limit check failed', err))
   const updated = (await Booking.findById(booking.id))!
   emitBookingEvent(booking.id, 'booking:status', { bookingId: booking.id, status: updated.status, paymentStatus: updated.paymentStatus, timestamp: new Date().toISOString() }, ['customer', 'admin'])
   res.json(await riderView(booking.id))

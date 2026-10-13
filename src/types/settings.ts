@@ -11,4 +11,5 @@ export interface PlatformSettings {
   adminLoginOtpEnabled: boolean
   accessTokenTtlMinutes: number
   refreshTokenTtlDays: number
+  maxCashDues: number
 }

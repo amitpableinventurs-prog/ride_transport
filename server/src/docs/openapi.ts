@@ -1378,7 +1378,7 @@ const riderPaths = {
   },
   '/duty/online': {
     post: appOp('Rider', 'Go online', {
-      description: '`403` not approved · `428` selfie due (`selfieRequired: true`) · `402` cash dues above `maxCashDues` · `409` no active vehicle.',
+      description: '`403` not approved · `428` selfie due (`selfieRequired: true`) · `402` cash dues above the limit (`maxCashDues`, ₹200 by default): `{ duesLimitReached: true, dues, limit }`, show the message and offer `POST /wallet/pay-dues` · `409` no active vehicle.',
       body: obj({ lat: num(), lng: num() }, ['lat', 'lng']),
       response: obj({
         onlineStatus: enumOf(['online']),
@@ -1485,12 +1485,14 @@ const riderPaths = {
   },
   '/wallet': {
     get: appOp('Rider', 'Balance, dues, transactions', {
-      description: 'A negative balance is commission owed on cash trips: `dues`. `withdrawable` is the positive balance; a payout needs at least `minWithdrawal`.',
+      description: 'A negative balance is commission owed on cash trips: `dues`. Dues above `duesLimit` (`duesLimitReached: true`) keep the rider offline until paid. `withdrawable` is the positive balance; a payout needs at least `minWithdrawal`.',
       parameters: pageParams,
       response: obj({
         balance: money(350),
         currency: str({ example: 'INR' }),
         dues: money(),
+        duesLimit: money(200),
+        duesLimitReached: bool(),
         withdrawable: money(350),
         minWithdrawal: money(100),
         transactions: pagedOf(walletTransaction),
@@ -1638,6 +1640,7 @@ const SOCKET_DOCS = [
   '| `rider:location` | Rider → Server | lat, lng, heading, speed, timestamp |',
   '| `booking:request` | Server → Rider | bookingId, mode, pickup, drop, stops, earning, expiresAt |',
   '| `booking:request_expired` | Server → Rider | bookingId |',
+  '| `rider:dues_limit` | Server → Rider | dues, limit, overLimit, onlineStatus: offline, message (sent when dues over the limit take the rider offline; a push notification is sent too) |',
   '| `booking:status` | Server → Customer, Admin | bookingId, status, timestamp |',
   '| `booking:rider_assigned` | Server → Customer | rider, vehicle, etaMin |',
   '| `booking:rider_location` | Server → Customer | lat, lng, heading, etaMin |',

@@ -13,6 +13,7 @@ import { VehicleType } from '../../models/VehicleType'
 import { Driver } from '../../models/Driver'
 import { removeLiveRider } from '../../realtime/socket'
 import { rejectOffer } from '../../services/dispatch'
+import { duesLimitMessage, getRiderDues } from '../../services/riderDues'
 import { activeVehicleFor } from '../../services/trips'
 import { serializeAppUser } from '../../utils/appUsers'
 import { findServiceArea, haversineKm, parseLatLng } from '../../utils/geo'
@@ -370,10 +371,8 @@ export async function goOnline(req: Request, res: Response) {
   const dueAt = selfieDueAt(driver, settings.selfieCheckIntervalHours)
   if (!dueAt || dueAt < new Date()) throw new HttpError(428, 'Please take a selfie to go online', { selfieRequired: true })
 
-  const wallet = await getOrCreateWallet('driver', driver._id)
-  if (-wallet.balance > settings.maxCashDues) {
-    throw new HttpError(402, `Clear your dues of ₹${-wallet.balance} to go online`, { dues: -wallet.balance, limit: settings.maxCashDues })
-  }
+  const dues = await getRiderDues(driver._id)
+  if (dues.overLimit) throw new HttpError(402, duesLimitMessage(dues), { duesLimitReached: true, dues: dues.dues, limit: dues.limit })
   const vehicle = await activeVehicleFor(driver._id, driver.assignedVehicle)
   if (!vehicle) throw new HttpError(409, 'You have no active vehicle. Add one and wait for verification.')
 

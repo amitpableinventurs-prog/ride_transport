@@ -24,7 +24,8 @@ const settingsSchema = new Schema(
     freeCancellationMinutes: { type: Number, default: 2 },
     freeWaitingMinutes: { type: Number, default: 3 },
     selfieCheckIntervalHours: { type: Number, default: 24 },
-    maxCashDues: { type: Number, default: 500 },
+    // Rider cash dues above this take them offline until paid.
+    maxCashDues: { type: Number, default: 200 },
     minWithdrawalAmount: { type: Number, default: 100 },
     referralEnabled: { type: Boolean, default: true },
     referralRewardReferrer: { type: Number, default: 50 },

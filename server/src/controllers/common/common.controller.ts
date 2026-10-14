@@ -100,6 +100,9 @@ function legalPageHtml(opts: { title: string; platformName: string; body: string
   h1 { font-size: 28px; line-height: 1.25; margin: 6px 0 4px; }
   .updated { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
   p { margin: 0 0 16px; white-space: pre-line; overflow-wrap: anywhere; }
+  h2 { font-size: 19px; line-height: 1.35; margin: 28px 0 10px; }
+  ul { margin: 0 0 16px; padding-left: 22px; }
+  li { margin: 0 0 6px; overflow-wrap: anywhere; }
   footer { border-top: 1px solid var(--rule); margin-top: 32px; padding-top: 16px; color: var(--muted); font-size: 14px; }
 </style>
 </head>
@@ -127,10 +130,17 @@ export async function legalPage(req: Request, res: Response) {
     return
   }
 
-  // Content is plain text from the admin panel: blank lines separate paragraphs.
+  // Content is plain text from the admin panel: blank lines separate blocks, a lone "N. Title" line
+  // is a section heading and a block of "• " lines is a list.
   const paragraphs = content
     .split(/\n\s*\n/)
-    .map((p) => `<p>${escapeHtml(p.trim())}</p>`)
+    .map((raw) => {
+      const block = raw.trim()
+      const lines = block.split('\n').map((l) => l.trim())
+      if (lines.length === 1 && /^\d+\.\s+\S.{0,90}$/.test(block)) return `<h2>${escapeHtml(block)}</h2>`
+      if (lines.every((l) => /^[•-]\s+/.test(l))) return `<ul>${lines.map((l) => `<li>${escapeHtml(l.replace(/^[•-]\s+/, ''))}</li>`).join('')}</ul>`
+      return `<p>${escapeHtml(block)}</p>`
+    })
     .join('\n')
   const updated = page.updatedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
   res.send(

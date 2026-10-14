@@ -12,7 +12,8 @@
     "seed": "ts-node src/seed.ts",
     "reset": "ts-node src/reset.ts",
     "restore:vehicles": "ts-node src/restoreVehicles.ts",
-    "restore:cms": "ts-node src/restoreCms.ts"
+    "restore:cms": "ts-node src/restoreCms.ts",
+    "publish:policies": "ts-node src/publishPolicies.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

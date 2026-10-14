@@ -8,6 +8,15 @@ export interface GatewayOrderResult {
   currency: string
 }
 
+export interface GatewayQrResult {
+  id: string
+  amount: number
+  /** Gateway-hosted QR image (Razorpay); null when the app should draw the QR from `upiUri`. */
+  imageUrl: string | null
+  /** UPI intent the QR encodes, when the gateway exposes it. */
+  upiUri: string | null
+}
+
 export interface GatewayRefundResult {
   id: string
   status: 'pending' | 'processed' | 'failed'
@@ -21,6 +30,12 @@ export interface PaymentProvider {
   verifySignature(orderId: string, paymentId: string, signature: string): boolean
   /** Asks the gateway whether the order was paid; returns the captured payment id or null. */
   findCapturedPayment(orderId: string): Promise<string | null>
+  /** Creates a single-use UPI QR for a fixed amount that closes on its own at `closesAt`. */
+  createUpiQr(amountRupees: number, opts: { description: string; closesAt: Date; notes: Record<string, string> }): Promise<GatewayQrResult>
+  /** Asks the gateway whether the QR was paid; returns the captured payment id or null. */
+  findQrPayment(qrId: string): Promise<string | null>
+  /** Closes an unpaid QR so it can no longer be paid. */
+  closeUpiQr(qrId: string): Promise<void>
   /** Checks a webhook's signature over the raw request body. */
   verifyWebhookSignature(rawBody: Buffer, signature: string): boolean
   /** Refunds (part of) a captured payment back to the customer's bank, card or UPI. */
@@ -47,6 +62,16 @@ const mockProvider: PaymentProvider = {
   async findCapturedPayment() {
     return null
   },
+  // Pay a mock QR from the customer app: POST /customer/payments/verify with the QR id as orderId and signature "mock_success".
+  async createUpiQr(amountRupees, opts) {
+    const id = `qr_mock_${crypto.randomBytes(8).toString('hex')}`
+    const params = new URLSearchParams({ pa: 'anzcabs.mock@upi', pn: 'AnZ Cabs', am: amountRupees.toFixed(2), cu: 'INR', tr: id, tn: opts.description })
+    return { id, amount: amountRupees, imageUrl: null, upiUri: `upi://pay?${params.toString()}` }
+  },
+  async findQrPayment() {
+    return null
+  },
+  async closeUpiQr() {},
   verifyWebhookSignature() {
     return false
   },
@@ -92,6 +117,50 @@ const razorpayProvider: PaymentProvider = {
     }
     const { items = [] } = (await response.json()) as { items?: { id: string; status: string }[] }
     return items.find((p) => p.status === 'captured')?.id ?? null
+  },
+  // https://razorpay.com/docs/api/qr-codes/create/ (QR Codes must be enabled on the Razorpay account)
+  async createUpiQr(amountRupees, opts) {
+    const response = await fetch('https://api.razorpay.com/v1/payments/qr_codes', {
+      method: 'POST',
+      headers: { Authorization: razorpayAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'upi_qr',
+        name: 'AnZ Cabs',
+        usage: 'single_use',
+        fixed_amount: true,
+        payment_amount: Math.round(amountRupees * 100),
+        description: opts.description,
+        close_by: Math.floor(opts.closesAt.getTime() / 1000),
+        notes: opts.notes,
+      }),
+    })
+    if (!response.ok) {
+      console.error('[payments:razorpay] QR creation failed', response.status, await response.text())
+      throw new HttpError(502, 'Could not create the payment QR. Please try again or collect cash.')
+    }
+    const qr = (await response.json()) as { id: string; image_url: string; payment_amount: number }
+    return { id: qr.id, amount: qr.payment_amount / 100, imageUrl: qr.image_url, upiUri: null }
+  },
+  // https://razorpay.com/docs/api/qr-codes/fetch-payments/
+  async findQrPayment(qrId) {
+    const response = await fetch(`https://api.razorpay.com/v1/payments/qr_codes/${encodeURIComponent(qrId)}/payments`, {
+      headers: { Authorization: razorpayAuthHeader() },
+    })
+    if (!response.ok) {
+      console.error('[payments:razorpay] fetching QR payments failed', qrId, response.status, await response.text())
+      throw new HttpError(502, 'Could not check the payment status. Please try again.')
+    }
+    const { items = [] } = (await response.json()) as { items?: { id: string; status: string }[] }
+    return items.find((p) => p.status === 'captured')?.id ?? null
+  },
+  // https://razorpay.com/docs/api/qr-codes/close/
+  async closeUpiQr(qrId) {
+    const response = await fetch(`https://api.razorpay.com/v1/payments/qr_codes/${encodeURIComponent(qrId)}/close`, {
+      method: 'POST',
+      headers: { Authorization: razorpayAuthHeader() },
+    })
+    // Already closed (paid or past close_by) is fine.
+    if (!response.ok) console.warn('[payments:razorpay] closing QR failed', qrId, response.status, await response.text())
   },
   // https://razorpay.com/docs/webhooks/validate-test/
   verifyWebhookSignature(rawBody, signature) {

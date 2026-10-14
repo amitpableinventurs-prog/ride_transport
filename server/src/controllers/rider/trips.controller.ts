@@ -6,6 +6,7 @@ import { Driver, type DriverDocument } from '../../models/Driver'
 import { Rating } from '../../models/Rating'
 import { emitBookingEvent, joinBookingRoom, leaveBookingRoom } from '../../realtime/socket'
 import { rejectOffer, requestPayload, startDispatch, stopDispatch } from '../../services/dispatch'
+import { closeBookingPaymentQrs, createBookingPaymentQr, getBookingPaymentQrStatus } from '../../services/gatewayPayments'
 import { enforceDuesLimit } from '../../services/riderDues'
 import {
   activeVehicleFor,
@@ -213,11 +214,26 @@ export async function confirmCashCollected(req: Request, res: Response) {
   if (booking.status !== 'completed') throw new HttpError(409, 'Complete the trip first')
   if (booking.paymentStatus !== 'pending') throw new HttpError(409, 'This booking is already paid')
   await settleBookingPayment(booking.id, { method: 'cash' })
+  await closeBookingPaymentQrs(booking.id).catch((err) => console.error('[payments] closing payment QR failed', err))
   // The commission on this trip is now dues; past the limit the rider goes offline.
   await enforceDuesLimit(booking.driver!).catch((err) => console.error('[dues] limit check failed', err))
   const updated = (await Booking.findById(booking.id))!
   emitBookingEvent(booking.id, 'booking:status', { bookingId: booking.id, status: updated.status, paymentStatus: updated.paymentStatus, timestamp: new Date().toISOString() }, ['customer', 'admin'])
   res.json(await riderView(booking.id))
+}
+
+// POST /bookings/:id/payment-qr: a UPI QR the customer scans to pay the fare online.
+export async function createPaymentQr(req: Request, res: Response) {
+  const booking = await findOwnBooking(req)
+  if (booking.status !== 'completed') throw new HttpError(409, 'Complete the trip first')
+  if (booking.paymentStatus !== 'pending') throw new HttpError(409, 'This booking is already paid')
+  res.status(201).json(await createBookingPaymentQr(booking))
+}
+
+// GET /bookings/:id/payment-qr: poll while the QR is on screen.
+export async function getPaymentQrStatus(req: Request, res: Response) {
+  const booking = await findOwnBooking(req)
+  res.json(await getBookingPaymentQrStatus(booking.id))
 }
 
 // POST /bookings/:id/cancel: the booking goes back to searching for another rider.

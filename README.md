@@ -65,7 +65,7 @@ RBAC is enforced by the API on every endpoint, and sensitive actions are audit l
 |---|---|
 | `/api/v1/auth` | OTP login with `role: customer \| rider`; new numbers get an account at verify (`isNewUser: true`). Refresh tokens rotate; logout revokes them and removes the FCM token |
 | `/api/v1/customer` | profile, saved places, SOS contacts, services + ETAs at a location, fare estimate, coupons, booking lifecycle (create / track / change drop / cancel / retry / rate + tip / invoice PDF / share link / call), wallet, payments, offers, SOS, tickets, notifications, account deletion |
-| `/api/v1/rider` | profile, onboarding, documents, vehicle, approval status, duty on/off with selfie check, requests (accept / reject), trip flow (arrived / start OTP / transport drops with OTP + POD / complete / cash collected / cancel / rate), earnings, wallet + dues, withdrawals, incentives, heatmap, SOS, tickets |
+| `/api/v1/rider` | profile, onboarding, documents, vehicle, approval status, duty on/off with selfie check, requests (accept / reject), trip flow (arrived / start OTP / transport drops with OTP + POD / complete / cash collected / UPI payment QR / cancel / rate), earnings, wallet + dues, withdrawals, incentives, heatmap, SOS, tickets |
 | `/api/v1/common`, `/api/v1/public` | app config, CMS pages, FCM device registration, public tracking page data, invoice PDF |
 | Socket.IO `/customer`, `/rider`, `/admin` | live booking events, rider location, chat, SOS alerts, live rider positions (event list in Swagger) |
 

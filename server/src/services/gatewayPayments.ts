@@ -1,7 +1,10 @@
 import type { HydratedDocument, Types } from 'mongoose'
 import { env } from '../config/env'
+import { Booking, type BookingDocument } from '../models/Booking'
 import { GatewayOrder, type GatewayOrderDocument } from '../models/GatewayOrder'
+import { emitBookingEvent, emitToRider } from '../realtime/socket'
 import { HttpError, requireString } from '../utils/http'
+import { notifyUser } from '../utils/notify'
 import { getPaymentProvider } from '../utils/payments'
 import { creditWallet, getOrCreateWallet } from '../utils/wallet'
 import { applyGatewayRefundStatus } from './refunds'
@@ -26,6 +29,10 @@ const RECONCILE_INTERVAL_MS = 2 * 60_000
 // Checked every sweep while fresh, then hourly, so abandoned checkouts don't flood the gateway API.
 const RECONCILE_FRESH_MS = 30 * 60_000
 const RECONCILE_SLOW_INTERVAL_MS = 60 * 60_000
+// A rider's payment QR closes on its own after this long.
+const QR_LIFETIME_MS = 20 * 60_000
+// An open QR is shown again unless it closes within this long.
+const QR_REUSE_MIN_LEFT_MS = 2 * 60_000
 
 /** Creates a gateway order the app completes with the gateway's checkout SDK, then sends to /payments/verify. */
 export async function createGatewayOrder(input: OrderRequest) {
@@ -80,17 +87,31 @@ async function applyPaidOrder(order: StoredOrder, paymentId: string) {
       console.warn(`[payments] booking ${claimed.booking} was already paid; ${claimed.providerOrderId} credited to the wallet`)
       return paidResult(claimed, { creditedToWallet: true })
     }
+    await announceBookingPaid(settled, claimed)
   } else {
     await creditWallet({ ownerType: claimed.ownerType, ownerId: claimed.ownerId, amount: claimed.amount, reason: 'recharge', ...ref })
   }
   return paidResult(claimed)
 }
 
+/** Tells the customer, the admins and the rider (who left the booking room at completion) that the fare was paid online. */
+async function announceBookingPaid(booking: HydratedDocument<BookingDocument>, order: StoredOrder) {
+  const timestamp = new Date().toISOString()
+  emitBookingEvent(booking.id, 'booking:status', { bookingId: booking.id, status: booking.status, paymentStatus: booking.paymentStatus, timestamp }, ['customer', 'admin'])
+  if (!booking.driver) return
+  emitToRider(booking.driver, 'booking:payment_received', { bookingId: booking.id, amount: order.amount, channel: order.channel, paymentStatus: booking.paymentStatus, timestamp })
+  await notifyUser('driver', booking.driver, {
+    title: 'Payment received',
+    body: `₹${order.amount} for trip ${booking.bookingCode} was paid online and added to your earnings.`,
+    data: { bookingId: booking.id, type: 'payment_received' },
+  })
+}
+
 /** Asks the gateway whether an unpaid order was paid and applies it if so. */
 async function reconcileOrder(order: StoredOrder) {
   const provider = getPaymentProvider()
   if (order.provider !== provider.name) return null
-  const paymentId = await provider.findCapturedPayment(order.providerOrderId)
+  const paymentId = order.channel === 'upi_qr' ? await provider.findQrPayment(order.providerOrderId) : await provider.findCapturedPayment(order.providerOrderId)
   return paymentId ? applyPaidOrder(order, paymentId) : null
 }
 
@@ -129,7 +150,95 @@ export async function getGatewayOrderStatus(owner: Owner, orderId: string) {
   return { status: order.status, purpose: order.purpose, amount: order.amount, ...(order.booking ? { bookingId: order.booking.toString() } : {}) }
 }
 
-/** Razorpay webhook: payment.captured / order.paid apply payments the app never confirmed; refund.processed / refund.failed track refunds. */
+function qrResult(order: StoredOrder) {
+  return {
+    qrId: order.providerOrderId,
+    status: order.status,
+    amount: order.amount,
+    currency: order.currency,
+    imageUrl: order.qrImageUrl ?? null,
+    upiUri: order.qrUpiUri ?? null,
+    closesAt: order.closesAt,
+    provider: order.provider,
+  }
+}
+
+type QrBooking = Pick<HydratedDocument<BookingDocument>, '_id' | 'id' | 'customer' | 'bookingCode' | 'fare'>
+
+/**
+ * A UPI QR the rider shows so the customer can pay a completed booking online.
+ * An open QR for the same amount is shown again instead of creating another one.
+ */
+export async function createBookingPaymentQr(booking: QrBooking) {
+  const amount = booking.fare?.total ?? 0
+  if (amount <= 0) throw new HttpError(409, 'Nothing to collect for this trip')
+
+  const open = await GatewayOrder.findOne({
+    booking: booking._id,
+    channel: 'upi_qr',
+    status: 'created',
+    amount,
+    provider: env.paymentProvider,
+    closesAt: { $gt: new Date(Date.now() + QR_REUSE_MIN_LEFT_MS) },
+  }).sort({ createdAt: -1 })
+  if (open) return qrResult(open)
+
+  const provider = getPaymentProvider()
+  const closesAt = new Date(Date.now() + QR_LIFETIME_MS)
+  const qr = await provider.createUpiQr(amount, {
+    description: `AnZ Cabs trip ${booking.bookingCode}`,
+    closesAt,
+    notes: { bookingId: booking.id, bookingCode: booking.bookingCode },
+  })
+  const order = await GatewayOrder.create({
+    purpose: 'booking',
+    channel: 'upi_qr',
+    // The customer pays: if the booking gets paid some other way first, the money goes to their wallet.
+    ownerType: 'customer',
+    ownerId: booking.customer,
+    booking: booking._id,
+    amount: qr.amount,
+    provider: provider.name,
+    providerOrderId: qr.id,
+    qrImageUrl: qr.imageUrl,
+    qrUpiUri: qr.upiUri,
+    closesAt,
+  })
+  return qrResult(order)
+}
+
+/** For the rider to poll while the QR is on screen; an unpaid QR is checked with the gateway. */
+export async function getBookingPaymentQrStatus(bookingId: string) {
+  let order = await GatewayOrder.findOne({ booking: bookingId, channel: 'upi_qr' }).sort({ createdAt: -1 })
+  if (!order) throw new HttpError(404, 'No payment QR was created for this booking')
+
+  const pending = await Booking.exists({ _id: bookingId, paymentStatus: 'pending' })
+  if (order.status === 'created' && pending) {
+    await reconcileOrder(order)
+    order = (await GatewayOrder.findById(order._id))!
+  }
+  const booking = await Booking.findById(bookingId).select('paymentStatus')
+  return {
+    bookingId,
+    paymentStatus: booking?.paymentStatus ?? 'pending',
+    qr: { ...qrResult(order), expired: order.status === 'created' && Boolean(order.closesAt && order.closesAt <= new Date()) },
+  }
+}
+
+/** Closes a booking's open QRs once it is paid another way (e.g. cash). A payment that still slips through goes to the customer's wallet. */
+export async function closeBookingPaymentQrs(bookingId: string) {
+  const open = await GatewayOrder.find({ booking: bookingId, channel: 'upi_qr', status: 'created', closesAt: { $gt: new Date() } })
+  if (!open.length) return
+  const provider = getPaymentProvider()
+  for (const order of open) {
+    if (order.provider === provider.name) await provider.closeUpiQr(order.providerOrderId)
+  }
+}
+
+/**
+ * Razorpay webhook: payment.captured / order.paid / qr_code.credited apply payments the app never confirmed;
+ * refund.processed / refund.failed track refunds.
+ */
 export async function handleRazorpayWebhook(rawBody: Buffer, signature: string) {
   const provider = getPaymentProvider()
   if (provider.name !== 'razorpay' || !provider.verifyWebhookSignature(rawBody, signature)) {
@@ -141,6 +250,7 @@ export async function handleRazorpayWebhook(rawBody: Buffer, signature: string) 
     payload?: {
       payment?: { entity?: { id?: string; order_id?: string; status?: string } }
       order?: { entity?: { id?: string } }
+      qr_code?: { entity?: { id?: string } }
       refund?: { entity?: { id?: string } }
     }
   }
@@ -150,9 +260,20 @@ export async function handleRazorpayWebhook(rawBody: Buffer, signature: string) 
     await applyGatewayRefundStatus(refundId, event.event === 'refund.processed' ? 'processed' : 'failed')
     return { handled: true }
   }
+  const payment = event.payload?.payment?.entity
+  if (event.event === 'qr_code.credited') {
+    const qrId = event.payload?.qr_code?.entity?.id
+    if (!qrId || !payment?.id || payment.status !== 'captured') return { handled: false }
+    const order = await GatewayOrder.findOne({ providerOrderId: qrId, provider: 'razorpay', channel: 'upi_qr' })
+    if (!order) {
+      console.warn('[payments:webhook] unknown QR', qrId)
+      return { handled: false }
+    }
+    await applyPaidOrder(order, payment.id)
+    return { handled: true }
+  }
   if (event.event !== 'payment.captured' && event.event !== 'order.paid') return { handled: false }
 
-  const payment = event.payload?.payment?.entity
   const orderEntity = event.payload?.order?.entity
   const orderId = payment?.order_id ?? orderEntity?.id
   if (!orderId) return { handled: false }

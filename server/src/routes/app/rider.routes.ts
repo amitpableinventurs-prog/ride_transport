@@ -67,6 +67,8 @@ router.post('/bookings/:id/start', singleUpload('goods', 'goodsPhoto', { imagesO
 router.post('/bookings/:id/stops/:stopId/complete', singleUpload('pod', 'pod', { imagesOnly: true }), trips.completeStop)
 router.post('/bookings/:id/complete', trips.completeBooking)
 router.post('/bookings/:id/cash-collected', trips.confirmCashCollected)
+router.post('/bookings/:id/payment-qr', trips.createPaymentQr)
+router.get('/bookings/:id/payment-qr', trips.getPaymentQrStatus)
 router.post('/bookings/:id/cancel', trips.cancelByRider)
 router.post('/bookings/:id/rating', trips.rateCustomer)
 

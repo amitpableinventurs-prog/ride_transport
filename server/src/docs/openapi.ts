@@ -407,6 +407,21 @@ const paymentStatus = obj({
   alreadyProcessed: bool(),
   creditedToWallet: bool(),
 })
+const paymentQr = obj({
+  qrId: str({ example: 'qr_HMsVL8HOpbMcjU' }),
+  status: enumOf(['created', 'paid', 'failed'], { description: '`created` until a payment is captured' }),
+  amount: money(69),
+  currency: str({ example: 'INR' }),
+  imageUrl: nullable(str({ format: 'uri' }), 'QR image to show (Razorpay). null with the mock provider: draw the QR from `upiUri`'),
+  upiUri: nullable(str({ example: 'upi://pay?pa=anzcabs.mock@upi&pn=AnZ+Cabs&am=69.00&cu=INR' }), 'UPI intent to draw as a QR when `imageUrl` is null'),
+  closesAt: date({ description: 'The QR stops accepting payments after this' }),
+  provider: str({ example: 'razorpay' }),
+})
+const paymentQrStatus = obj({
+  bookingId: oid(),
+  paymentStatus: enumOf(['pending', 'paid', 'failed', 'refunded'], { description: '`paid` → show success. The booking may also have been paid another way (cash, customer app)' }),
+  qr: obj({ ...paymentQr.properties, expired: bool({ description: 'true when the QR closed unpaid: create a new one or collect cash' }) }),
+})
 const orderIdParam = pathParam('orderId', 'Gateway order id from the order API', str({ example: 'order_TnJ4Q5K76efsYn' }))
 const paymentStatusDescription = [
   'Poll this after the checkout closes (success, failure or the user leaving the app). If the order is still `created`, the server asks the gateway; a captured payment is applied here even when `/payments/verify` was never called.',
@@ -1444,6 +1459,25 @@ const riderPaths = {
       errors: [404, 409],
     }),
   },
+  '/bookings/{id}/payment-qr': {
+    post: appOp('Rider', 'UPI QR for the customer to pay', {
+      description: [
+        'For a completed, unpaid booking ("Pay with QR"). Returns a single-use UPI QR for the exact fare that closes after 20 minutes; calling again while one is open returns the same QR.',
+        'Show `imageUrl` (or draw `upiUri` as a QR), then wait for the `booking:payment_received` socket event or poll `GET` below every few seconds. When it is paid the booking is marked paid and the rider earning goes to the rider wallet (no cash dues).',
+        'Mock provider: pay it from the customer side with `POST /customer/payments/verify` `{ orderId: <qrId>, paymentId: "pay_mock_1", signature: "mock_success" }`.',
+      ].join('\n\n'),
+      parameters: [bookingIdParam],
+      response: paymentQr,
+      status: 201,
+      errors: [404, 409, 502, 503],
+    }),
+    get: appOp('Rider', 'Payment status of the booking QR', {
+      description: 'Poll while the QR is on screen. An unpaid QR is checked with the gateway, so a payment is applied here even if the webhook is late.',
+      parameters: [bookingIdParam],
+      response: paymentQrStatus,
+      errors: [404, 502],
+    }),
+  },
   '/bookings/{id}/cancel': {
     post: appOp('Rider', 'Cancel with reason', {
       description: 'Allowed before the trip starts; the booking goes back to searching for another rider.',
@@ -1647,7 +1681,8 @@ const SOCKET_DOCS = [
   '| `booking:request` | Server → Rider | bookingId, mode, pickup, drop, stops, earning, expiresAt |',
   '| `booking:request_expired` | Server → Rider | bookingId |',
   '| `rider:dues_limit` | Server → Rider | dues, limit, overLimit, onlineStatus: offline, message (sent when dues over the limit take the rider offline; a push notification is sent too) |',
-  '| `booking:status` | Server → Customer, Admin | bookingId, status, timestamp |',
+  '| `booking:status` | Server → Customer, Admin | bookingId, status, timestamp (paymentStatus when a completed booking is paid) |',
+  '| `booking:payment_received` | Server → Rider | bookingId, amount, channel (`upi_qr` or `checkout`), paymentStatus, timestamp (a completed booking was paid online; a push notification is sent too) |',
   '| `booking:rider_assigned` | Server → Customer | rider, vehicle, etaMin |',
   '| `booking:rider_location` | Server → Customer | lat, lng, heading, etaMin |',
   '| `booking:fare_updated` | Server → Customer, Rider | fare, distanceKm, drop |',

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Eye, Trash2, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { deleteDriver, fetchDrivers, updateDriver } from '@/api/drivers'
 import type { ApprovalStatus, Driver, OnlineStatus, UserStatus } from '@/types/entities'
@@ -7,6 +7,7 @@ import { IconButton } from '@/components/common/IconButton'
 import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 
 const STATUS_TONE: Record<UserStatus, 'success' | 'warning' | 'danger'> = {
   active: 'success',
@@ -38,11 +39,22 @@ export function RidersPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [viewing, setViewing] = useState<Driver | null>(null)
+  const [deleting, setDeleting] = useState<Driver | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   async function load() {
     const data = await fetchDrivers({ page, limit: LIMIT, q: q || undefined, serviceType: 'rider' })
     setRiders(data.items)
     setTotal(data.total)
+  }
+
+  useEffect(() => () => clearTimeout(noticeTimer.current), [])
+
+  function showNotice(message: string) {
+    clearTimeout(noticeTimer.current)
+    setNotice(message)
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000)
   }
 
   useEffect(() => {
@@ -65,25 +77,17 @@ export function RidersPage() {
     }
   }
 
-  async function remove(rider: Driver) {
-    const who = rider.name || rider.phone
-    const ok = window.confirm(
-      `Delete ${who}?\n\nThis permanently removes the account with its vehicles, documents and wallet. Past trips stay in the bookings history. This cannot be undone.`,
-    )
-    if (!ok) return
-    setBusyId(rider.id)
+  async function confirmDelete(rider: Driver) {
+    await deleteDriver(rider.id)
+    setDeleting(null)
     setError(null)
-    try {
-      await deleteDriver(rider.id)
-      setRiders((prev) => prev!.filter((d) => d.id !== rider.id))
-      setTotal((t) => Math.max(0, t - 1))
-    } catch (err) {
-      const message = (err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Could not delete rider'
-      setError(message)
-      window.alert(message)
-    } finally {
-      setBusyId(null)
-    }
+    showNotice(`${rider.name || rider.phone} was deleted.`)
+    const remaining = riders!.filter((d) => d.id !== rider.id)
+    // The row goes at once; then the page is refetched so it fills up again from the next page.
+    setRiders(remaining)
+    setTotal((t) => Math.max(0, t - 1))
+    if (remaining.length === 0 && page > 1) setPage((p) => p - 1)
+    else load().catch(() => setError('Could not refresh the list.'))
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT))
@@ -109,6 +113,11 @@ export function RidersPage() {
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}
+      {notice && (
+        <p role="status" className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+          {notice}
+        </p>
+      )}
 
       {!riders ? (
         <LoadingScreen />
@@ -179,7 +188,7 @@ export function RidersPage() {
                             disabled={busyId === rider.id}
                             onClick={() => apply(rider, { status: rider.status === 'active' ? 'suspended' : 'active' })}
                           />
-                          <IconButton label="Delete" tone="danger" icon={Trash2} disabled={busyId === rider.id} onClick={() => remove(rider)} />
+                          <IconButton label="Delete" tone="danger" icon={Trash2} disabled={busyId === rider.id} onClick={() => setDeleting(rider)} />
                         </PermissionGate>
                       </div>
                     </td>
@@ -211,6 +220,22 @@ export function RidersPage() {
             </div>
           </div>
         </>
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete ${deleting.name || deleting.phone}?`}
+          confirmLabel="Delete rider"
+          busyLabel="Deleting…"
+          onConfirm={() => confirmDelete(deleting)}
+          onClose={() => setDeleting(null)}
+        >
+          <p>This permanently removes the account with its vehicles, documents and wallet. Past trips stay in the bookings history.</p>
+          {deleting.onlineStatus !== 'offline' && (
+            <p className="mt-2 font-medium text-navy-700">This rider is {deleting.onlineStatus.replace('_', ' ')} right now.</p>
+          )}
+          <p className="mt-2 font-medium text-brand-red">This cannot be undone.</p>
+        </ConfirmDialog>
       )}
 
       {viewing && (

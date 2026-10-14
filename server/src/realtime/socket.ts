@@ -133,6 +133,11 @@ export function removeLiveRider(driverId: Id) {
   liveRiders.delete(driverId.toString())
 }
 
+/** Signs a deleted rider's connected app out of real-time updates. */
+export function disconnectRider(driverId: Id) {
+  ns('rider')?.in(`user:${driverId.toString()}`).disconnectSockets(true)
+}
+
 // admin:live_riders — batched rider positions per zone.
 async function broadcastLiveRiders() {
   const adminNs = ns('admin')

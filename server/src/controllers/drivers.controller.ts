@@ -6,6 +6,8 @@ import { OtpCode } from '../models/OtpCode'
 import { Vehicle } from '../models/Vehicle'
 import { Wallet } from '../models/Wallet'
 import { WalletTransaction } from '../models/WalletTransaction'
+import { disconnectRider, removeLiveRider } from '../realtime/socket'
+import { withdrawOffer } from '../services/dispatch'
 import { recordAudit } from '../utils/audit'
 import { searchRegex } from '../utils/regex'
 
@@ -145,6 +147,12 @@ export async function deleteDriver(req: Request, res: Response) {
   ])
   await Promise.all([Vehicle.deleteMany({ _id: { $in: vehicleIds } }), wallet ? wallet.deleteOne() : null])
   await driver.deleteOne()
+
+  // A request on offer to this rider goes to the next one at once instead of waiting for the offer to time out.
+  removeLiveRider(driver._id)
+  disconnectRider(driver._id)
+  const offered = await Booking.find({ status: 'requested', 'offer.driver': driver._id }).select('_id')
+  await Promise.all(offered.map((b) => withdrawOffer(b.id, driver.id).catch((err) => console.error('[drivers] offer release failed', b.id, err))))
 
   await recordAudit(req.admin!, 'driver.deleted', 'Driver', `${driver.name || 'No name'} (${driver.phone})`, {
     serviceType: driver.serviceType,

@@ -169,6 +169,7 @@ async function releaseOffer(bookingId: string, driverId: string, note: string): 
 
 export const expireOffer = (bookingId: string, driverId: string) => releaseOffer(bookingId, driverId, 'Rider did not respond')
 export const rejectOffer = (bookingId: string, driverId: string) => releaseOffer(bookingId, driverId, 'Rider rejected the request')
+export const withdrawOffer = (bookingId: string, driverId: string) => releaseOffer(bookingId, driverId, 'Rider account was deleted')
 
 /** Starts (or restarts) matching for a booking that is in `requested`. */
 export function startDispatch(bookingId: string) {

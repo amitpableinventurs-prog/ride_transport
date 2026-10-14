@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Eye, Trash2, ChevronLeft, ChevronRight, Search, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { deleteDriver, fetchDrivers, updateDriver } from '@/api/drivers'
 import type { ApprovalStatus, Driver, OnlineStatus, UserStatus } from '@/types/entities'
@@ -7,6 +7,7 @@ import { IconButton } from '@/components/common/IconButton'
 import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 
 const STATUS_TONE: Record<UserStatus, 'success' | 'warning' | 'danger'> = {
   active: 'success',
@@ -38,11 +39,22 @@ export function DriversPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [viewing, setViewing] = useState<Driver | null>(null)
+  const [deleting, setDeleting] = useState<Driver | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   async function load() {
     const data = await fetchDrivers({ page, limit: LIMIT, q: q || undefined, serviceType: 'transport' })
     setDrivers(data.items)
     setTotal(data.total)
+  }
+
+  useEffect(() => () => clearTimeout(noticeTimer.current), [])
+
+  function showNotice(message: string) {
+    clearTimeout(noticeTimer.current)
+    setNotice(message)
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000)
   }
 
   useEffect(() => {
@@ -65,25 +77,17 @@ export function DriversPage() {
     }
   }
 
-  async function remove(driver: Driver) {
-    const who = driver.name || driver.phone
-    const ok = window.confirm(
-      `Delete ${who}?\n\nThis permanently removes the account with its vehicles, documents and wallet. Past trips stay in the bookings history. This cannot be undone.`,
-    )
-    if (!ok) return
-    setBusyId(driver.id)
+  async function confirmDelete(driver: Driver) {
+    await deleteDriver(driver.id)
+    setDeleting(null)
     setError(null)
-    try {
-      await deleteDriver(driver.id)
-      setDrivers((prev) => prev!.filter((d) => d.id !== driver.id))
-      setTotal((t) => Math.max(0, t - 1))
-    } catch (err) {
-      const message = (err as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Could not delete driver'
-      setError(message)
-      window.alert(message)
-    } finally {
-      setBusyId(null)
-    }
+    showNotice(`${driver.name || driver.phone} was deleted.`)
+    const remaining = drivers!.filter((d) => d.id !== driver.id)
+    // The row goes at once; then the page is refetched so it fills up again from the next page.
+    setDrivers(remaining)
+    setTotal((t) => Math.max(0, t - 1))
+    if (remaining.length === 0 && page > 1) setPage((p) => p - 1)
+    else load().catch(() => setError('Could not refresh the list.'))
   }
 
   const totalPages = Math.max(1, Math.ceil(total / LIMIT))
@@ -109,6 +113,11 @@ export function DriversPage() {
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}
+      {notice && (
+        <p role="status" className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+          {notice}
+        </p>
+      )}
 
       {!drivers ? (
         <LoadingScreen />
@@ -185,7 +194,7 @@ export function DriversPage() {
                             disabled={busyId === driver.id}
                             onClick={() => apply(driver, { status: driver.status === 'active' ? 'suspended' : 'active' })}
                           />
-                          <IconButton label="Delete" tone="danger" icon={Trash2} disabled={busyId === driver.id} onClick={() => remove(driver)} />
+                          <IconButton label="Delete" tone="danger" icon={Trash2} disabled={busyId === driver.id} onClick={() => setDeleting(driver)} />
                         </PermissionGate>
                       </div>
                     </td>
@@ -217,6 +226,22 @@ export function DriversPage() {
             </div>
           </div>
         </>
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete ${deleting.name || deleting.phone}?`}
+          confirmLabel="Delete rider"
+          busyLabel="Deleting…"
+          onConfirm={() => confirmDelete(deleting)}
+          onClose={() => setDeleting(null)}
+        >
+          <p>This permanently removes the account with its vehicles, documents and wallet. Past trips stay in the bookings history.</p>
+          {deleting.onlineStatus !== 'offline' && (
+            <p className="mt-2 font-medium text-navy-700">This rider is {deleting.onlineStatus.replace('_', ' ')} right now.</p>
+          )}
+          <p className="mt-2 font-medium text-brand-red">This cannot be undone.</p>
+        </ConfirmDialog>
       )}
 
       {viewing && (

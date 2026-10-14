@@ -14,6 +14,10 @@ const jwtAccessSecret = required('JWT_ACCESS_SECRET', 'dev-access-secret-change-
 const jwtRefreshSecret = required('JWT_REFRESH_SECRET', 'dev-refresh-secret-change-me')
 
 const port = Number(process.env.PORT ?? 5000)
+const corsOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim().replace(/\/$/, ''))
+  .filter(Boolean)
 
 export const env = {
   port,
@@ -23,9 +27,8 @@ export const env = {
   uploadDir: process.env.UPLOAD_DIR ?? path.resolve(process.cwd(), 'uploads'),
   mongoUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/rideflow_admin'),
   // In development any localhost port is allowed, since Vite moves to the next free port when 5173 is taken.
-  corsOrigin: isProduction
-    ? (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
-    : [process.env.CORS_ORIGIN ?? 'http://localhost:5173', /^http:\/\/(localhost|127\.0\.0\.1):\d+$/],
+  // Comma-separated origins, e.g. the admin panel and the public website.
+  corsOrigin: isProduction ? corsOrigins : [...corsOrigins, /^http:\/\/(localhost|127\.0\.0\.1):\d+$/],
   jwtAccessSecret,
   jwtRefreshSecret,
   // Mobile-app tokens use their own secrets so they can never pass admin auth.

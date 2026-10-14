@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { apiClient } from '@/api/client'
@@ -23,9 +24,33 @@ interface AuthState {
   hasPermission: (permission: PermissionKey) => boolean
 }
 
+const STORAGE_KEY = 'rideflow-admin-auth'
+
 function apiErrorMessage(err: unknown, fallback: string): string {
   return (err as { response?: { data?: { message?: string } } }).response?.data?.message ?? fallback
 }
+
+const isUnauthorized = (err: unknown) => axios.isAxiosError(err) && err.response?.status === 401
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** The refresh token as last saved by any tab, or undefined when storage cannot be read. */
+function storedRefreshToken(): string | null | undefined {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? ((JSON.parse(raw) as { state?: { refreshToken?: string | null } }).state?.refreshToken ?? null) : null
+  } catch {
+    return undefined
+  }
+}
+
+// Refresh tokens are single-use: the server ends the whole session when one is sent twice. So only one
+// refresh runs at a time, across tabs too (Web Locks), and each starts from the newest saved token.
+function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  return navigator.locks ? navigator.locks.request('rideflow-admin-refresh', fn) : fn()
+}
+
+let refreshInFlight: Promise<string | null> | null = null
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -116,29 +141,51 @@ export const useAuthStore = create<AuthState>()(
           return
         }
         set({ status: 'loading' })
-        const accessToken = await get().refreshAccessToken()
-        if (!accessToken) {
-          get().clearSession()
-          return
-        }
-        try {
-          const { data } = await apiClient.get<AuthUser>('/auth/me')
-          set({ user: data, accessToken, status: 'authenticated' })
-        } catch {
-          get().clearSession()
+        // A server that is restarting (or a network blip) is retried instead of signing the admin out.
+        for (let attempt = 1; ; attempt++) {
+          try {
+            const accessToken = await get().refreshAccessToken()
+            if (!accessToken) {
+              get().clearSession()
+              return
+            }
+            const { data } = await apiClient.get<AuthUser>('/auth/me')
+            set({ user: data, status: 'authenticated', error: null })
+            return
+          } catch (err) {
+            if (isUnauthorized(err)) {
+              get().clearSession()
+              return
+            }
+            if (attempt >= 6) {
+              // The saved session is kept, so a reload signs straight back in once the server is up.
+              set({ status: 'unauthenticated', error: 'Could not reach the server. Please try again in a moment.' })
+              return
+            }
+            await sleep(attempt * 1000)
+          }
         }
       },
 
-      refreshAccessToken: async () => {
-        const { refreshToken } = get()
-        if (!refreshToken) return null
-        try {
-          const { data } = await apiClient.post<{ accessToken: string; refreshToken: string }>('/auth/refresh', { refreshToken })
-          set({ accessToken: data.accessToken, refreshToken: data.refreshToken })
-          return data.accessToken
-        } catch {
-          return null
-        }
+      refreshAccessToken: () => {
+        refreshInFlight ??= withRefreshLock(async () => {
+          // Another tab may have used (and replaced) the token this tab loaded, so read the saved one.
+          const stored = storedRefreshToken()
+          const refreshToken = stored === undefined ? get().refreshToken : stored
+          if (!refreshToken) return null
+          try {
+            const { data } = await apiClient.post<{ accessToken: string; refreshToken: string }>('/auth/refresh', { refreshToken })
+            set({ accessToken: data.accessToken, refreshToken: data.refreshToken })
+            return data.accessToken
+          } catch (err) {
+            // Only a rejected token ends the session; network and server errors are thrown to the caller.
+            if (isUnauthorized(err)) return null
+            throw err
+          }
+        }).finally(() => {
+          refreshInFlight = null
+        })
+        return refreshInFlight
       },
 
       clearSession: () => {
@@ -151,7 +198,7 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'rideflow-admin-auth',
+      name: STORAGE_KEY,
       partialize: (state) => ({ refreshToken: state.refreshToken }),
     },
   ),

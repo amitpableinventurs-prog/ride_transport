@@ -13,8 +13,6 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-let refreshPromise: Promise<string | null> | null = null
-
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -28,16 +26,9 @@ apiClient.interceptors.response.use(
 
     originalRequest._retry = true
 
-    if (!refreshPromise) {
-      refreshPromise = useAuthStore
-        .getState()
-        .refreshAccessToken()
-        .finally(() => {
-          refreshPromise = null
-        })
-    }
-
-    const newToken = await refreshPromise
+    // Concurrent 401s share one refresh (see refreshAccessToken). If the refresh itself fails on the network,
+    // that error is thrown and the admin stays signed in.
+    const newToken = await useAuthStore.getState().refreshAccessToken()
     if (!newToken) {
       useAuthStore.getState().clearSession()
       throw error

@@ -1,11 +1,25 @@
-import { useEffect, useState } from 'react'
-import { Search, UserPlus } from 'lucide-react'
-import { assignBookingDriver, fetchAvailableDrivers, fetchBooking, fetchBookings, updateBookingStatus } from '@/api/bookings'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Download, Loader2, Printer, Search, Trash2, UserPlus } from 'lucide-react'
+import {
+  assignBookingDriver,
+  deleteBooking,
+  fetchAllBookings,
+  fetchAvailableDrivers,
+  fetchBooking,
+  fetchBookings,
+  updateBookingStatus,
+  type BookingListParams,
+} from '@/api/bookings'
 import type { AvailableDriver, Booking, BookingStatus, ServiceMode } from '@/types/booking'
 import { Badge } from '@/components/common/Badge'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { IconButton } from '@/components/common/IconButton'
 import { Modal } from '@/components/common/Modal'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
+import { Pagination } from '@/components/common/Pagination'
 import { PermissionGate } from '@/components/common/PermissionGate'
+import { downloadCsv } from '@/lib/csv'
+import { openPrintWindow, printTable } from '@/lib/print'
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
@@ -53,6 +67,34 @@ function vehicleLabel(vehicle: Booking['vehicle']): string {
   return vehicle.registrationNumber
 }
 
+function personPhone(value: Booking['customer'] | Booking['driver']): string {
+  return value && typeof value !== 'string' ? value.phone : ''
+}
+
+// Undeletable while dispatching or on a trip; the server also refuses bookings with money records.
+const IN_PROGRESS: BookingStatus[] = ['scheduled', 'requested', 'accepted', 'arriving', 'arrived', 'started', 'in_transit']
+
+/** One flat row per booking for CSV export and print. */
+function exportRow(b: Booking): Record<string, string | number> {
+  return {
+    'Booking code': b.bookingCode,
+    Mode: b.mode,
+    Category: b.categoryKey,
+    Customer: personLabel(b.customer, ''),
+    'Customer phone': personPhone(b.customer),
+    Driver: personLabel(b.driver, ''),
+    'Driver phone': personPhone(b.driver),
+    Vehicle: vehicleLabel(b.vehicle),
+    Pickup: b.pickup?.address ?? '',
+    Drop: b.drop?.address ?? '',
+    Status: b.status,
+    Payment: b.paymentStatus,
+    'Payment method': b.paymentMethod,
+    'Fare (INR)': b.fare?.total ?? 0,
+    Created: dateFmt.format(new Date(b.createdAt)),
+  }
+}
+
 function errorMessage(err: unknown, fallback: string): string {
   const maybe = err as { response?: { data?: { message?: string } } }
   return maybe.response?.data?.message ?? fallback
@@ -78,70 +120,146 @@ export function BookingsListView({
   const [items, setItems] = useState<Booking[] | null>(null)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(20)
   const [mode, setMode] = useState<'' | ServiceMode>('')
   const [status, setStatus] = useState('')
   const [paymentStatus, setPaymentStatus] = useState('')
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const limit = 20
+  const [deleting, setDeleting] = useState<Booking | null>(null)
+  const [exporting, setExporting] = useState<'csv' | 'print' | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const requestId = useRef(0)
 
-  useEffect(() => {
-    let cancelled = false
-    fetchBookings({
-      mode: fixedMode ?? (mode || undefined),
-      status: fixedStatus ?? (status || undefined),
-      paymentStatus: paymentStatus || undefined,
-      q: search.trim() || undefined,
-      page,
-      limit,
-    })
-      .then((data) => {
-        if (cancelled) return
-        setItems(data.items)
-        setTotal(data.total)
-      })
-      .catch(() => {
-        if (!cancelled) setError('Could not load bookings.')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [mode, status, paymentStatus, search, page, fixedMode, fixedStatus])
-
-  function reload() {
-    fetchBookings({
-      mode: fixedMode ?? (mode || undefined),
-      status: fixedStatus ?? (status || undefined),
-      paymentStatus: paymentStatus || undefined,
-      q: search.trim() || undefined,
-      page,
-      limit,
-    })
-      .then((data) => {
-        setItems(data.items)
-        setTotal(data.total)
-      })
-      .catch(() => setError('Could not load bookings.'))
+  const modeFilter = fixedMode ?? (mode || undefined)
+  const statusFilter = fixedStatus ?? (status || undefined)
+  const query = search.trim() || undefined
+  const filters: Omit<BookingListParams, 'page' | 'limit'> = {
+    mode: modeFilter,
+    status: statusFilter,
+    paymentStatus: paymentStatus || undefined,
+    q: query,
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / limit))
+  // Only the newest request may fill the table, so fast filter changes can't show stale rows.
+  const load = useCallback(() => {
+    const id = ++requestId.current
+    return fetchBookings({ mode: modeFilter, status: statusFilter, paymentStatus: paymentStatus || undefined, q: query, page, limit })
+      .then((data) => {
+        if (id !== requestId.current) return
+        setItems(data.items)
+        setTotal(data.total)
+        setError(null)
+      })
+      .catch(() => {
+        if (id === requestId.current) setError('Could not load bookings.')
+      })
+  }, [modeFilter, statusFilter, paymentStatus, query, page, limit])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  useEffect(() => () => clearTimeout(noticeTimer.current), [])
+
+  function showNotice(message: string) {
+    clearTimeout(noticeTimer.current)
+    setNotice(message)
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000)
+  }
+
+  function changeFilter(apply: () => void) {
+    setPage(1)
+    apply()
+  }
+
+  async function confirmDelete(booking: Booking) {
+    await deleteBooking(booking.id)
+    setDeleting(null)
+    showNotice(`Booking ${booking.bookingCode} was deleted.`)
+    const remaining = items!.filter((b) => b.id !== booking.id)
+    // The row goes at once; then the page is refetched so it fills up again from the next page.
+    setItems(remaining)
+    setTotal((t) => Math.max(0, t - 1))
+    if (remaining.length === 0 && page > 1) setPage((p) => p - 1)
+    else load()
+  }
+
+  async function exportCsv() {
+    setExporting('csv')
+    try {
+      const all = await fetchAllBookings(filters)
+      if (!all.length) {
+        showNotice('No bookings to export.')
+        return
+      }
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      downloadCsv(`${slug}_${new Date().toISOString().slice(0, 10)}`, all.map(exportRow))
+    } catch {
+      setError('Could not export bookings. Please try again.')
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  async function print() {
+    // Opened before the fetch: a window opened after an await is blocked as a pop-up.
+    const win = openPrintWindow()
+    if (!win) {
+      setError('Allow pop-ups for this site to print.')
+      return
+    }
+    setExporting('print')
+    try {
+      const all = await fetchAllBookings(filters)
+      const applied = [filters.mode, filters.status, filters.paymentStatus && `payment ${filters.paymentStatus}`, filters.q && `"${filters.q}"`]
+        .filter(Boolean)
+        .join(' · ')
+      printTable(win, { title: `AnZ Cabs — ${title}`, subtitle: `${all.length} bookings${applied ? ` · ${applied}` : ''}`, rows: all.map(exportRow) })
+    } catch {
+      win.close()
+      setError('Could not load bookings for printing. Please try again.')
+    } finally {
+      setExporting(null)
+    }
+  }
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-navy-800">{title}</h1>
-        <p className="text-sm text-navy-400">{subtitle}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-navy-800">{title}</h1>
+          <p className="text-sm text-navy-400">{subtitle}</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={exporting !== null || total === 0}
+            className="flex items-center gap-2 rounded-lg border border-navy-100 bg-white px-3 py-2 text-sm font-medium text-navy-600 hover:bg-navy-50 disabled:opacity-50"
+          >
+            {exporting === 'csv' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={print}
+            disabled={exporting !== null || total === 0}
+            className="flex items-center gap-2 rounded-lg border border-navy-100 bg-white px-3 py-2 text-sm font-medium text-navy-600 hover:bg-navy-50 disabled:opacity-50"
+          >
+            {exporting === 'print' ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+            Print
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         {showModeFilter && (
           <select
             value={mode}
-            onChange={(e) => {
-              setPage(1)
-              setMode(e.target.value as '' | ServiceMode)
-            }}
+            onChange={(e) => changeFilter(() => setMode(e.target.value as '' | ServiceMode))}
             className="rounded-lg border border-navy-100 px-3 py-2 text-sm text-navy-700"
           >
             <option value="">All modes</option>
@@ -152,10 +270,7 @@ export function BookingsListView({
         {showStatusFilter && (
           <select
             value={status}
-            onChange={(e) => {
-              setPage(1)
-              setStatus(e.target.value)
-            }}
+            onChange={(e) => changeFilter(() => setStatus(e.target.value))}
             className="rounded-lg border border-navy-100 px-3 py-2 text-sm text-navy-700"
           >
             <option value="">All statuses</option>
@@ -168,10 +283,7 @@ export function BookingsListView({
         )}
         <select
           value={paymentStatus}
-          onChange={(e) => {
-            setPage(1)
-            setPaymentStatus(e.target.value)
-          }}
+          onChange={(e) => changeFilter(() => setPaymentStatus(e.target.value))}
           className="rounded-lg border border-navy-100 px-3 py-2 text-sm text-navy-700"
         >
           <option value="">All payments</option>
@@ -184,16 +296,14 @@ export function BookingsListView({
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-navy-300" />
           <input
             value={search}
-            onChange={(e) => {
-              setPage(1)
-              setSearch(e.target.value)
-            }}
+            onChange={(e) => changeFilter(() => setSearch(e.target.value))}
             placeholder="Search booking code…"
             className="rounded-lg border border-navy-100 py-2 pl-9 pr-3 text-sm outline-none focus:border-navy-400"
           />
         </div>
       </div>
 
+      {notice && <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-brand-green-dark">{notice}</p>}
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}
 
       {!items ? (
@@ -201,7 +311,7 @@ export function BookingsListView({
       ) : (
         <>
           <div className="overflow-x-auto rounded-2xl border border-navy-100 bg-white shadow-sm">
-            <table className="w-full min-w-[860px] text-left text-sm">
+            <table className="w-full min-w-[920px] text-left text-sm">
               <thead>
                 <tr className="border-b border-navy-100 bg-navy-50/50 text-xs uppercase tracking-wide text-navy-400">
                   <th className="px-5 py-3 font-medium">Booking</th>
@@ -211,6 +321,9 @@ export function BookingsListView({
                   <th className="px-5 py-3 font-medium">Payment</th>
                   <th className="px-5 py-3 font-medium text-right">Fare</th>
                   <th className="px-5 py-3 font-medium">Created</th>
+                  <PermissionGate permission="bookings.manage">
+                    <th className="px-5 py-3 font-medium text-right">Actions</th>
+                  </PermissionGate>
                 </tr>
               </thead>
               <tbody>
@@ -236,11 +349,24 @@ export function BookingsListView({
                     </td>
                     <td className="px-5 py-3 text-right text-navy-700">{currency.format(b.fare?.total ?? 0)}</td>
                     <td className="px-5 py-3 text-navy-500">{dateFmt.format(new Date(b.createdAt))}</td>
+                    <PermissionGate permission="bookings.manage">
+                      <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex justify-end">
+                          <IconButton
+                            label={IN_PROGRESS.includes(b.status) ? 'Cancel this booking before deleting it' : 'Delete'}
+                            tone="danger"
+                            icon={Trash2}
+                            disabled={IN_PROGRESS.includes(b.status)}
+                            onClick={() => setDeleting(b)}
+                          />
+                        </div>
+                      </td>
+                    </PermissionGate>
                   </tr>
                 ))}
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-navy-300">
+                    <td colSpan={8} className="px-5 py-8 text-center text-navy-300">
                       No bookings found.
                     </td>
                   </tr>
@@ -249,33 +375,33 @@ export function BookingsListView({
             </table>
           </div>
 
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between text-sm text-navy-500">
-              <span>
-                Page {page} of {totalPages} ({total} total)
-              </span>
-              <div className="flex gap-2">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                  className="rounded-lg border border-navy-100 px-3 py-1.5 disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="rounded-lg border border-navy-100 px-3 py-1.5 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
+          <Pagination
+            page={page}
+            pageSize={limit}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => changeFilter(() => setLimit(size))}
+          />
         </>
       )}
 
-      {selectedId && <BookingDetailModal id={selectedId} onClose={() => setSelectedId(null)} onChanged={reload} />}
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete booking ${deleting.bookingCode}?`}
+          confirmLabel="Delete booking"
+          busyLabel="Deleting…"
+          onConfirm={() => confirmDelete(deleting)}
+          onClose={() => setDeleting(null)}
+        >
+          <p>
+            This permanently removes the booking with its chat and ratings. Bookings with payments, refunds, wallet entries, SOS alerts or
+            support tickets cannot be deleted; they are kept for the accounts.
+          </p>
+          <p className="mt-2 font-medium text-brand-red">This cannot be undone.</p>
+        </ConfirmDialog>
+      )}
+
+      {selectedId && <BookingDetailModal id={selectedId} onClose={() => setSelectedId(null)} onChanged={load} />}
     </div>
   )
 }

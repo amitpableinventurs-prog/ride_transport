@@ -10,5 +10,6 @@ router.get('/', requirePermission('bookings.view'), bookingsController.listBooki
 router.get('/:id', requirePermission('bookings.view'), bookingsController.getBooking)
 router.patch('/:id/assign', requirePermission('bookings.manage'), bookingsController.assignBooking)
 router.patch('/:id/status', requirePermission('bookings.manage'), bookingsController.updateBookingStatus)
+router.delete('/:id', requirePermission('bookings.manage'), bookingsController.deleteBooking)
 
 export default router

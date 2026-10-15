@@ -37,3 +37,19 @@ export async function updateBookingStatus(
   const { data } = await apiClient.patch<Booking>(`/bookings/${id}/status`, input)
   return data
 }
+
+export async function deleteBooking(id: string): Promise<void> {
+  await apiClient.delete(`/bookings/${id}`)
+}
+
+/** Every booking matching the filters (for CSV export and print), fetched 100 at a time. */
+export async function fetchAllBookings(params: Omit<BookingListParams, 'page' | 'limit'>): Promise<Booking[]> {
+  const limit = 100
+  const first = await fetchBookings({ ...params, page: 1, limit })
+  const items = [...first.items]
+  const pages = Math.ceil(first.total / limit)
+  for (let page = 2; page <= pages; page++) {
+    items.push(...(await fetchBookings({ ...params, page, limit })).items)
+  }
+  return items
+}

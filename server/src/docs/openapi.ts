@@ -2708,6 +2708,14 @@ export const openApiSpec = {
         response: ref('Booking'),
         errors: [404],
       }),
+      delete: op('Bookings', 'Delete a booking', {
+        permission: 'bookings.manage',
+        description:
+          'Permanently removes the booking with its chat, ratings and unpaid checkout orders. `409` while it is scheduled, searching or on a trip (cancel it first), and when it has payments, refunds, wallet entries, coins, SOS alerts or tickets on record.',
+        parameters: [idParam],
+        response: message('Booking deleted'),
+        errors: [404, 409],
+      }),
     },
     '/bookings/{id}/assign': {
       patch: op('Bookings', 'Manually assign a driver (and optionally a vehicle)', {

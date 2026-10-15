@@ -16,6 +16,8 @@ export interface Customer {
   emergencyContacts?: { name: string; phone: string }[]
   totalBookings: number
   rating: number
+  /** Set when the customer asked to delete their account from the app. */
+  deletionRequestedAt?: string | null
   createdAt: string
   updatedAt: string
 }

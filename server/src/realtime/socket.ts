@@ -133,6 +133,11 @@ export function removeLiveRider(driverId: Id) {
   liveRiders.delete(driverId.toString())
 }
 
+/** Signs a deleted customer's connected app out of real-time updates. */
+export function disconnectCustomer(customerId: Id) {
+  ns('customer')?.in(`user:${customerId.toString()}`).disconnectSockets(true)
+}
+
 /** Signs a deleted rider's connected app out of real-time updates. */
 export function disconnectRider(driverId: Id) {
   ns('rider')?.in(`user:${driverId.toString()}`).disconnectSockets(true)

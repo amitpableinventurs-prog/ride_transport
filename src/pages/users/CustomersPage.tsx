@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Eye, Search } from 'lucide-react'
-import { fetchCustomers, updateCustomer } from '@/api/customers'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Eye, Search, Trash2 } from 'lucide-react'
+import { deleteCustomer, fetchCustomers, updateCustomer } from '@/api/customers'
 import type { Customer, UserStatus } from '@/types/entities'
 import { CustomerDetailModal } from './CustomerDetailModal'
 import { Badge } from '@/components/common/Badge'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { IconButton } from '@/components/common/IconButton'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
 
@@ -24,6 +26,9 @@ export function CustomersPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [viewing, setViewing] = useState<Customer | null>(null)
+  const [deleting, setDeleting] = useState<Customer | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   async function load() {
     const data = await fetchCustomers({ page, limit: LIMIT, q: q || undefined, status: statusFilter || undefined })
@@ -38,6 +43,27 @@ export function CustomersPage() {
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, q, statusFilter])
+
+  useEffect(() => () => clearTimeout(noticeTimer.current), [])
+
+  function showNotice(message: string) {
+    clearTimeout(noticeTimer.current)
+    setNotice(message)
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000)
+  }
+
+  async function confirmDelete(customer: Customer) {
+    await deleteCustomer(customer.id)
+    setDeleting(null)
+    setError(null)
+    showNotice(`${customer.name || customer.phone} was deleted.`)
+    const remaining = customers!.filter((c) => c.id !== customer.id)
+    // The row goes at once; then the page is refetched so it fills up again from the next page.
+    setCustomers(remaining)
+    setTotal((t) => Math.max(0, t - 1))
+    if (remaining.length === 0 && page > 1) setPage((p) => p - 1)
+    else load().catch(() => setError('Could not refresh the list.'))
+  }
 
   async function changeStatus(customer: Customer, status: UserStatus) {
     setBusyId(customer.id)
@@ -88,6 +114,7 @@ export function CustomersPage() {
         </select>
       </div>
 
+      {notice && <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-brand-green-dark">{notice}</p>}
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}
 
       {!customers ? (
@@ -122,6 +149,11 @@ export function CustomersPage() {
                         {customer.name || 'No name yet'}
                       </button>
                       <p className="text-xs text-navy-300">{customer.email}</p>
+                      {customer.deletionRequestedAt && (
+                        <span className="mt-1 inline-block">
+                          <Badge tone="danger">Deletion requested</Badge>
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-navy-600">{customer.phone}</td>
                     <td className="px-5 py-3 text-navy-600">{customer.city ?? '—'}</td>
@@ -144,13 +176,18 @@ export function CustomersPage() {
                     </td>
                     <td className="px-5 py-3 text-navy-600">{customer.totalBookings}</td>
                     <td className="px-5 py-3 text-navy-600">{customer.rating.toFixed(1)}</td>
-                    <td className="px-5 py-3 text-right">
-                      <button
-                        onClick={() => setViewing(customer)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-600 hover:bg-navy-50"
-                      >
-                        <Eye size={13} /> View
-                      </button>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setViewing(customer)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-navy-100 px-2 py-1.5 text-xs font-medium text-navy-600 hover:bg-navy-50"
+                        >
+                          <Eye size={13} /> View
+                        </button>
+                        <PermissionGate permission="users.manage">
+                          <IconButton label="Delete" tone="danger" icon={Trash2} disabled={busyId === customer.id} onClick={() => setDeleting(customer)} />
+                        </PermissionGate>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -180,6 +217,23 @@ export function CustomersPage() {
             </div>
           </div>
         </>
+      )}
+
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete ${deleting.name || deleting.phone}?`}
+          confirmLabel="Delete customer"
+          busyLabel="Deleting…"
+          onConfirm={() => confirmDelete(deleting)}
+          onClose={() => setDeleting(null)}
+        >
+          <p>
+            This permanently removes the account with its wallet balance, coins, saved places and notifications. Past bookings and
+            payments stay in the history.
+          </p>
+          {deleting.deletionRequestedAt && <p className="mt-2 font-medium text-navy-700">The customer asked to delete their account.</p>}
+          <p className="mt-2 font-medium text-brand-red">This cannot be undone.</p>
+        </ConfirmDialog>
       )}
 
       {viewing && (

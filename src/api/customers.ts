@@ -25,3 +25,7 @@ export async function updateCustomer(
   const { data } = await apiClient.patch<Customer>(`/users/customers/${id}`, patch)
   return data
 }
+
+export async function deleteCustomer(id: string): Promise<void> {
+  await apiClient.delete(`/users/customers/${id}`)
+}

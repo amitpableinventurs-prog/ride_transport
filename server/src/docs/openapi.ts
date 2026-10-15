@@ -2633,6 +2633,14 @@ export const openApiSpec = {
         response: ref('Customer'),
         errors: [400, 404],
       }),
+      delete: op('Customers', 'Delete a customer', {
+        permission: 'users.manage',
+        description:
+          'Permanently removes the account with its wallet (and wallet history), coins, devices, notifications and unpaid checkout orders. Past bookings, payments, ratings, tickets and SOS records stay. `409` while the customer has a scheduled, searching or ongoing booking.',
+        parameters: [idParam],
+        response: message('Customer deleted'),
+        errors: [404, 409],
+      }),
     },
     '/users/drivers': {
       get: op('Drivers', 'List riders and drivers', {

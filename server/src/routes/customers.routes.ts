@@ -7,5 +7,6 @@ const router = Router()
 router.use(requireAuth)
 router.get('/', requirePermission('users.view'), customersController.listCustomers)
 router.patch('/:id', requirePermission('users.manage'), customersController.updateCustomer)
+router.delete('/:id', requirePermission('users.manage'), customersController.deleteCustomer)
 
 export default router

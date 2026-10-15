@@ -1,5 +1,14 @@
 import type { Request, Response } from 'express'
+import { AppNotification } from '../models/AppNotification'
+import { ACTIVE_TRIP_STATUSES, Booking, type BookingStatus } from '../models/Booking'
+import { CoinTransaction } from '../models/CoinTransaction'
 import { Customer } from '../models/Customer'
+import { Device } from '../models/Device'
+import { GatewayOrder } from '../models/GatewayOrder'
+import { OtpCode } from '../models/OtpCode'
+import { Wallet } from '../models/Wallet'
+import { WalletTransaction } from '../models/WalletTransaction'
+import { disconnectCustomer } from '../realtime/socket'
 import { recordAudit } from '../utils/audit'
 import { searchRegex } from '../utils/regex'
 
@@ -87,4 +96,47 @@ export async function updateCustomer(req: Request, res: Response) {
   )
 
   res.json(customer)
+}
+
+// Bookings still being dispatched or driven; they must be cancelled before the customer can be deleted.
+const UNDELETABLE_BOOKING_STATUSES: BookingStatus[] = ['scheduled', 'requested', ...ACTIVE_TRIP_STATUSES]
+
+// DELETE /:id: removes the account with its wallet, coins, devices and notifications.
+// Past bookings, payments, ratings, tickets and SOS records stay for the accounts and audits.
+export async function deleteCustomer(req: Request, res: Response) {
+  const customer = await Customer.findById(req.params.id)
+  if (!customer) {
+    res.status(404).json({ message: 'Customer not found' })
+    return
+  }
+
+  const open = await Booking.findOne({ customer: customer._id, status: { $in: UNDELETABLE_BOOKING_STATUSES } }).select('bookingCode status')
+  if (open) {
+    res.status(409).json({ message: `Cannot delete: booking ${open.bookingCode} is ${open.status.replace(/_/g, ' ')}. Cancel it first.` })
+    return
+  }
+
+  const wallet = await Wallet.findOne({ ownerType: 'customer', ownerId: customer._id })
+  await Promise.all([
+    wallet ? WalletTransaction.deleteMany({ wallet: wallet._id }) : null,
+    CoinTransaction.deleteMany({ customer: customer._id }),
+    Device.deleteMany({ userType: 'customer', userId: customer._id }),
+    AppNotification.deleteMany({ userType: 'customer', userId: customer._id }),
+    // Only unpaid checkouts; a paid one belongs to a payment record.
+    GatewayOrder.deleteMany({ ownerType: 'customer', ownerId: customer._id, status: { $ne: 'paid' } }),
+    OtpCode.deleteMany({ purpose: 'app_login', destination: `customer:${customer.phone}` }),
+    // People this customer referred keep their accounts; the link to the deleted referrer goes.
+    Customer.updateMany({ referredBy: customer._id }, { $set: { referredBy: null } }),
+  ])
+  if (wallet) await wallet.deleteOne()
+  await customer.deleteOne()
+  disconnectCustomer(customer._id)
+
+  await recordAudit(req.admin!, 'customer.deleted', 'Customer', `${customer.name || 'No name'} (${customer.phone})`, {
+    walletBalance: wallet?.balance ?? 0,
+    coins: customer.coins ?? 0,
+    totalBookings: customer.totalBookings,
+    deletionRequested: Boolean(customer.deletionRequestedAt),
+  })
+  res.json({ message: 'Customer deleted' })
 }

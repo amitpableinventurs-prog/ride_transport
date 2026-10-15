@@ -30,7 +30,16 @@ export interface DocumentSource {
 }
 
 /** Lists an account's documents with the files, so an admin can open each one and verify or reject it. */
-export function DocumentReviewPanel({ sources, onLoaded }: { sources: DocumentSource[]; onLoaded?: (docs: DocumentRecord[]) => void }) {
+export function DocumentReviewPanel({
+  sources,
+  onLoaded,
+  onReviewed,
+}: {
+  sources: DocumentSource[]
+  onLoaded?: (docs: DocumentRecord[]) => void
+  /** Called after the admin verifies or rejects a document. */
+  onReviewed?: (doc: DocumentRecord) => void
+}) {
   const [docs, setDocs] = useState<DocumentRecord[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -63,6 +72,7 @@ export function DocumentReviewPanel({ sources, onLoaded }: { sources: DocumentSo
       const next = docs!.map((d) => (d.id === doc.id ? updated : d))
       setDocs(next)
       onLoaded?.(next)
+      onReviewed?.(updated)
       setRejecting(null)
       setReason('')
     } catch (err) {

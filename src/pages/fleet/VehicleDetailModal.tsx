@@ -2,17 +2,17 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { CheckCircle2, Pencil, XCircle } from 'lucide-react'
 import { updateVehicle } from '@/api/vehicles'
 import { fetchVehicleTypes } from '@/api/vehicleTypes'
-import type { DocumentRecord, Vehicle, VehicleType } from '@/types/entities'
+import type { Vehicle, VehicleType } from '@/types/entities'
 import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
 import { PermissionGate } from '@/components/common/PermissionGate'
-import { DocumentReviewPanel, unverifiedCount, type DocumentSource } from '@/components/documents/DocumentReviewPanel'
+import { DocumentReviewPanel, type DocumentSource } from '@/components/documents/DocumentReviewPanel'
 
 const INPUT = 'w-full rounded-lg border border-navy-100 px-3 py-2 text-sm outline-none focus:border-navy-400'
 const STATUS_TONE = { active: 'success', inactive: 'neutral', blocked: 'danger' } as const
 const DOC_TONE = { verified: 'success', pending: 'warning', rejected: 'danger', expired: 'danger' } as const
 
-/** Review screen for a vehicle: details, its documents (RC etc.), then approve or reject. */
+/** Review screen for a vehicle: details and its documents (RC etc.); verifying the RC puts the vehicle in service. */
 export function VehicleDetailModal({
   vehicle,
   onClose,
@@ -22,7 +22,6 @@ export function VehicleDetailModal({
   onClose: () => void
   onUpdated: (vehicle: Vehicle) => void
 }) {
-  const [docs, setDocs] = useState<DocumentRecord[] | null>(null)
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,7 +40,6 @@ export function VehicleDetailModal({
   const sources: DocumentSource[] = [{ ownerType: 'vehicle', ownerId: vehicle.id }]
   if (vehicle.ownerType === 'driver') sources.push({ ownerType: 'driver', ownerId: vehicle.ownerId, docTypes: ['vehicle_rc'] })
 
-  const pendingDocs = unverifiedCount(docs)
   const vehicleType = typeof vehicle.vehicleType === 'string' ? vehicle.vehicleType : vehicle.vehicleType.name
 
   async function save(patch: Parameters<typeof updateVehicle>[1], after?: () => void) {
@@ -143,30 +141,34 @@ export function VehicleDetailModal({
           <DocumentReviewPanel
             sources={sources}
             onLoaded={(d) => {
-              setDocs(d)
               // Document reviews keep the vehicle's documents status in step on the server; mirror it here.
               if (d.length && d.every((x) => x.status === 'verified') && vehicle.documentsStatus !== 'verified') onUpdated({ ...vehicle, documentsStatus: 'verified' })
               else if (d.some((x) => x.status === 'rejected') && vehicle.documentsStatus !== 'rejected') onUpdated({ ...vehicle, documentsStatus: 'rejected' })
+            }}
+            onReviewed={(doc) => {
+              // The server puts the vehicle in service when its RC is verified and takes it out when the RC is rejected.
+              if (doc.docType !== 'vehicle_rc' || vehicle.status === 'blocked') return
+              if (doc.status === 'verified') onUpdated({ ...vehicle, status: 'active', documentsStatus: 'verified' })
+              else if (doc.status === 'rejected') onUpdated({ ...vehicle, status: 'inactive', documentsStatus: 'rejected' })
             }}
           />
         </section>
 
         <PermissionGate permission="fleet.manage">
           <section className="rounded-xl bg-navy-50 p-4">
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-400">Approval</h4>
-            {pendingDocs !== null && pendingDocs > 0 && vehicle.status !== 'active' && (
-              <p className="mb-3 rounded-lg bg-orange-50 px-3 py-2 text-xs text-brand-orange-dark">
-                {docs!.length === 0 ? 'No documents have been uploaded.' : `${pendingDocs} of ${docs!.length} documents are not verified yet.`} Review them above before approving.
-              </p>
-            )}
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-400">Status</h4>
+            <p className="mb-3 text-xs text-navy-500">
+              There is no separate vehicle approval: verifying the RC above puts the vehicle in service, and rejecting it takes the vehicle out.
+              Use these buttons only to change that by hand.
+            </p>
             <div className="flex gap-2">
               {vehicle.status !== 'active' && (
                 <button
-                  onClick={() => save({ status: 'active', ...(pendingDocs === 0 && docs!.length > 0 ? { documentsStatus: 'verified' as const } : {}) })}
+                  onClick={() => save({ status: 'active' })}
                   disabled={busy}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-brand-green-dark px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
-                  <CheckCircle2 size={15} /> Approve vehicle
+                  <CheckCircle2 size={15} /> Activate
                 </button>
               )}
               {vehicle.status === 'active' && (

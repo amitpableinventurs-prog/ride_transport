@@ -91,6 +91,9 @@ export async function updateDocumentStatus(req: Request, res: Response) {
   await doc.save()
 
   // Keep the vehicle's documentsStatus in step with its RC (the rider app files the RC under the driver).
+  // There is no separate vehicle approval: a verified RC puts the vehicle in service, and a rejected or
+  // expired RC takes it out. Vehicles an admin blocked stay blocked.
+  let vehicleStatus: string | undefined
   if (doc.ownerType === 'vehicle' || doc.docType === 'vehicle_rc') {
     const vehicle =
       doc.ownerType === 'vehicle'
@@ -98,6 +101,11 @@ export async function updateDocumentStatus(req: Request, res: Response) {
         : await Vehicle.findOne({ ownerType: 'driver', ownerId: doc.ownerId }).sort({ createdAt: -1 })
     if (vehicle) {
       vehicle.documentsStatus = status
+      if (doc.docType === 'vehicle_rc' && vehicle.status !== 'blocked') {
+        if (status === 'verified') vehicle.status = 'active'
+        else if (status === 'rejected' || status === 'expired') vehicle.status = 'inactive'
+      }
+      if (vehicle.isModified('status')) vehicleStatus = vehicle.status
       await vehicle.save()
     }
   }
@@ -105,6 +113,7 @@ export async function updateDocumentStatus(req: Request, res: Response) {
   await recordAudit(req.admin!, 'document.status_changed', 'DocumentRecord', `${doc.docType} (${doc.ownerType})`, {
     status,
     rejectionReason,
+    ...(vehicleStatus ? { vehicleStatus } : {}),
   })
 
   res.json(doc)

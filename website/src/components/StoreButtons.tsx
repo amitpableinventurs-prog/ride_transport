@@ -22,7 +22,7 @@ export function StoreButtons({ app, compact = false, className = '' }: { app: 'c
     <div className={`flex flex-wrap gap-3 ${className}`}>
       {STORES[app].map(({ label, icon: Icon, url }) =>
         url ? (
-          <a key={label} href={url} target="_blank" rel="noopener" className={`btn bg-white text-ink-950 hover:bg-gold-100 ${size}`}>
+          <a key={label} href={url} target="_blank" rel="noopener" className={`btn bg-white text-ink-950 hover:bg-brand-100 ${size}`}>
             <Icon className="h-4 w-4" aria-hidden />
             {label}
           </a>

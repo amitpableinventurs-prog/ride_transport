@@ -15,9 +15,9 @@ const NAV = [
 export function Logo({ size = 36 }: { size?: number }) {
   return (
     <Link to="/" className="flex items-center gap-2.5" aria-label="AnZ Cabs home">
-      <img src="/brand/anz-icon-yellow.png" alt="" width={size} height={size} className="rounded-lg" style={{ width: size, height: size }} />
+      <img src="/brand/anz-icon-blue.png" alt="" width={size} height={size} className="rounded-lg" style={{ width: size, height: size }} />
       <span className="font-display text-lg font-semibold tracking-tight text-white">
-        AnZ <span className="text-gold-400">Cabs</span>
+        AnZ <span className="text-brand-400">Cabs</span>
       </span>
     </Link>
   )
@@ -47,7 +47,7 @@ function Header() {
     <header className="sticky top-0 z-40 border-b border-white/10 bg-ink-950/90 backdrop-blur">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:rounded-full focus:bg-gold-400 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-ink-950"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:rounded-full focus:bg-brand-400 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-ink-950"
       >
         Skip to content
       </a>
@@ -60,14 +60,14 @@ function Header() {
                 {item.label}
               </Link>
             ) : (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-link ${isActive ? 'text-gold-400' : ''}`}>
+              <NavLink key={item.to} to={item.to} className={({ isActive }) => `nav-link ${isActive ? 'text-brand-400' : ''}`}>
                 {item.label}
               </NavLink>
             ),
           )}
         </nav>
         <div className="flex items-center gap-2">
-          <Link to="/#download" className="btn-gold hidden px-4 py-2.5 sm:inline-flex">
+          <Link to="/#download" className="btn-brand hidden px-4 py-2.5 sm:inline-flex">
             <Smartphone className="h-4 w-4" aria-hidden />
             Get the app
           </Link>
@@ -92,7 +92,7 @@ function Header() {
                 {item.label}
               </Link>
             ))}
-            <Link to="/#download" className="btn-gold mt-2">
+            <Link to="/#download" className="btn-brand mt-2">
               Get the app
             </Link>
           </div>
@@ -113,15 +113,15 @@ function ContactList() {
   return (
     <ul className="mt-4 space-y-3 text-sm">
       <li>
-        <Link to="/policy/contact" className="hover:text-gold-400">
+        <Link to="/policy/contact" className="hover:text-brand-400">
           Contact us
         </Link>
       </li>
       {rows.map(({ icon: Icon, text, href }) => (
         <li key={text} className="flex items-start gap-2">
-          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" aria-hidden />
+          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-400" aria-hidden />
           {href ? (
-            <a href={href} className="hover:text-gold-400">
+            <a href={href} className="hover:text-brand-400">
               {text}
             </a>
           ) : (
@@ -140,7 +140,7 @@ function FooterLinks({ title, links }: { title: string; links: { label: string; 
       <ul className="mt-4 space-y-2.5 text-sm">
         {links.map((link) => (
           <li key={link.label}>
-            <Link to={link.to} className="hover:text-gold-400">
+            <Link to={link.to} className="hover:text-brand-400">
               {link.label}
             </Link>
           </li>
@@ -190,11 +190,11 @@ function Footer() {
             &copy; {new Date().getFullYear()} {site.name}. All rights reserved.
           </p>
           <p>
-            <Link to="/policy/rider_terms" className="hover:text-gold-400">
+            <Link to="/policy/rider_terms" className="hover:text-brand-400">
               Rider terms
             </Link>
             <span className="mx-2 text-white/30">·</span>
-            <Link to="/policy/partner_terms" className="hover:text-gold-400">
+            <Link to="/policy/partner_terms" className="hover:text-brand-400">
               Partner terms
             </Link>
           </p>

@@ -39,11 +39,11 @@ export function DrivePage() {
   return (
     <>
       <section className="relative overflow-hidden bg-ink-950 text-white">
-        <div className="pointer-events-none absolute -left-40 -top-40 h-[480px] w-[480px] rounded-full bg-gold-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute -left-40 -top-40 h-[480px] w-[480px] rounded-full bg-brand-400/10 blur-3xl" />
         <div className="container-x relative py-16 lg:py-24">
-          <p className="eyebrow text-gold-400">Drive with AnZ Cabs</p>
+          <p className="eyebrow text-brand-400">Drive with AnZ Cabs</p>
           <h1 className="mt-4 max-w-3xl font-display text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
-            Your vehicle. Your hours. <span className="text-gold-400">Your earnings.</span>
+            Your vehicle. Your hours. <span className="text-brand-400">Your earnings.</span>
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-white/70 sm:text-lg">
             Take ride and delivery requests near you with a bike, auto, cab or goods vehicle. Go online when it suits you and get paid for every trip.
@@ -98,7 +98,7 @@ export function DrivePage() {
             <ol className="mt-8 space-y-5">
               {STEPS.map((step, i) => (
                 <li key={step.title} className="flex gap-4">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-950 font-display text-sm font-semibold text-gold-400">{i + 1}</span>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-950 font-display text-sm font-semibold text-brand-400">{i + 1}</span>
                   <div>
                     <h3 className="font-semibold text-ink-900">{step.title}</h3>
                     <p className="mt-1 text-sm text-ink-500">{step.text}</p>
@@ -123,7 +123,7 @@ export function DrivePage() {
             <p className="mt-6 rounded-xl bg-ink-50 p-4 text-xs leading-5 text-ink-500">
               On cash trips you collect the fare from the customer and the AnZ Cabs commission is added to your dues, which you pay from the app. Keep dues within the limit
               to stay online. Read the{' '}
-              <Link to="/policy/rider_terms" className="font-medium text-gold-600 underline">
+              <Link to="/policy/rider_terms" className="font-medium text-brand-600 underline">
                 Rider Terms
               </Link>{' '}
               for details.
@@ -135,14 +135,14 @@ export function DrivePage() {
       <section className="px-4 pb-20 sm:px-6">
         <div className="mx-auto grid max-w-6xl items-center gap-8 rounded-3xl bg-ink-950 p-8 text-white sm:p-12 lg:grid-cols-[1.4fr_1fr]">
           <div>
-            <span className="icon-chip bg-gold-400">
+            <span className="icon-chip bg-brand-500 text-white">
               <Building2 className="h-5 w-5" aria-hidden />
             </span>
             <h2 className="mt-4 font-display text-2xl font-semibold tracking-tight sm:text-3xl">Run a fleet of goods vehicles?</h2>
             <p className="mt-3 max-w-xl text-white/60">Partner with AnZ Cabs as a transport partner and put your vehicles and drivers to work on delivery requests.</p>
           </div>
           <div className="flex flex-wrap gap-3 lg:justify-end">
-            <Link to="/policy/contact" className="btn-gold">
+            <Link to="/policy/contact" className="btn-brand">
               Contact us <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
             <Link to="/policy/partner_terms" className="btn-ghost">

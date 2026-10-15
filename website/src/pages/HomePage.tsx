@@ -19,6 +19,7 @@ import {
   Package,
   Route,
   Share2,
+  ShieldCheck,
   Siren,
   Smartphone,
   Star,
@@ -29,6 +30,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { site } from '@/config'
+import { Slider } from '@/components/Slider'
 import { StoreButtons } from '@/components/StoreButtons'
 import { usePageTitle } from '@/hooks/usePageTitle'
 
@@ -90,8 +92,8 @@ const FAQS: { q: string; a: ReactNode }[] = [
     q: 'Can I cancel a booking?',
     a: (
       <>
-        Yes. Cancelling while we look for a rider, or shortly after a rider accepts, is free. After that a cancellation fee may apply. See our{' '}
-        <Link to="/policy/cancellation" className="font-medium text-gold-600 underline">
+        Yes, and it is always free. You can cancel from the app any time before the trip starts. See our{' '}
+        <Link to="/policy/cancellation" className="font-medium text-brand-600 underline">
           Cancellation Policy
         </Link>
         .
@@ -112,7 +114,7 @@ const FAQS: { q: string; a: ReactNode }[] = [
     a: (
       <>
         Download the rider app, upload your documents and vehicle details, and start taking trips once you are verified.{' '}
-        <Link to="/drive" className="font-medium text-gold-600 underline">
+        <Link to="/drive" className="font-medium text-brand-600 underline">
           Learn more
         </Link>
         .
@@ -120,6 +122,67 @@ const FAQS: { q: string; a: ReactNode }[] = [
     ),
   },
 ]
+
+interface Highlight {
+  icon: LucideIcon
+  eyebrow: string
+  title: string
+  text: string
+  cta: { label: string; to: string }
+}
+
+const HIGHLIGHTS: Highlight[] = [
+  {
+    icon: Bike,
+    eyebrow: 'Bike rides',
+    title: 'Beat the traffic on a bike',
+    text: 'The fastest way through the city for solo trips. See the fare before you book and pay by cash or UPI.',
+    cta: { label: 'Get the app', to: '/#download' },
+  },
+  {
+    icon: Package,
+    eyebrow: 'Parcel delivery',
+    title: 'Send parcels across town',
+    text: 'Bike porters and small goods vehicles, up to 5 drops in one trip, with an OTP and a photo at every drop.',
+    cta: { label: 'See delivery', to: '/#delivery' },
+  },
+  {
+    icon: ShieldCheck,
+    eyebrow: 'Safety',
+    title: 'Safe rides, every time',
+    text: 'Verified riders, an OTP to start every trip, live trip sharing with family and SOS in the app.',
+    cta: { label: 'How we keep you safe', to: '/#safety' },
+  },
+  {
+    icon: CarFront,
+    eyebrow: 'Drive with us',
+    title: 'Earn with your own vehicle',
+    text: 'Go online when you want, see the earning before you accept and withdraw to your bank or UPI.',
+    cta: { label: 'Drive with us', to: '/drive' },
+  },
+]
+
+function HighlightSlide({ icon: Icon, eyebrow, title, text, cta }: Highlight) {
+  return (
+    <div className="relative grid min-h-[300px] items-center gap-8 overflow-hidden bg-gradient-to-br from-ink-950 via-ink-900 to-brand-600 px-6 py-10 text-white sm:px-14 md:grid-cols-[1.3fr_1fr]">
+      <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-brand-400/25 blur-3xl" />
+      <div className="relative">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-300">{eyebrow}</p>
+        <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
+        <p className="mt-3 max-w-lg text-white/75">{text}</p>
+        <Link to={cta.to} className="btn-brand mt-6">
+          {cta.label} <ArrowRight className="h-4 w-4" aria-hidden />
+        </Link>
+      </div>
+      <div className="relative hidden justify-center md:flex" aria-hidden>
+        <div className="flex h-44 w-44 items-center justify-center rounded-full border border-brand-300/30 bg-brand-400/15 shadow-[0_0_80px_-10px] shadow-brand-400/60">
+          <Icon className="h-20 w-20 text-brand-300" strokeWidth={1.5} />
+        </div>
+        <div className="road absolute -bottom-6 left-0 right-0 h-1 opacity-60" />
+      </div>
+    </div>
+  )
+}
 
 function FeatureCard({ icon: Icon, title, text }: Feature) {
   return (
@@ -141,10 +204,10 @@ function PhoneMockup() {
         <div className="overflow-hidden rounded-[2rem] bg-ink-50">
           <div className="relative h-56 bg-[linear-gradient(135deg,#eef0f3_25%,#e4e7ec_25%,#e4e7ec_50%,#eef0f3_50%,#eef0f3_75%,#e4e7ec_75%)] bg-[length:40px_40px]">
             <div className="road absolute left-6 right-6 top-28 h-1 rotate-[-12deg] rounded" />
-            <span className="absolute left-8 top-[7.5rem] flex h-8 w-8 items-center justify-center rounded-full bg-ink-900 text-gold-400 shadow-lg">
+            <span className="absolute left-8 top-[7.5rem] flex h-8 w-8 items-center justify-center rounded-full bg-ink-900 text-brand-400 shadow-lg">
               <MapPin className="h-4 w-4" />
             </span>
-            <span className="absolute right-10 top-16 flex h-8 w-8 items-center justify-center rounded-full bg-gold-400 text-ink-950 shadow-lg">
+            <span className="absolute right-10 top-16 flex h-8 w-8 items-center justify-center rounded-full bg-brand-400 text-ink-950 shadow-lg">
               <Navigation className="h-4 w-4" />
             </span>
             <span className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-ink-800 shadow">Rider 4 min away</span>
@@ -161,7 +224,7 @@ function PhoneMockup() {
                 Vijay Nagar, Indore
               </div>
             </div>
-            <div className="flex items-center justify-between rounded-2xl border-2 border-gold-400 bg-gold-50 p-3">
+            <div className="flex items-center justify-between rounded-2xl border-2 border-brand-400 bg-brand-50 p-3">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-ink-900">
                   <Car className="h-5 w-5" />
@@ -185,7 +248,7 @@ function PhoneMockup() {
               </div>
               <p className="font-display text-base font-semibold text-ink-900">₹48</p>
             </div>
-            <div className="rounded-full bg-ink-950 py-3 text-center text-sm font-semibold text-gold-400">Book Cab Economy</div>
+            <div className="rounded-full bg-ink-950 py-3 text-center text-sm font-semibold text-brand-400">Book Cab Economy</div>
           </div>
         </div>
       </div>
@@ -201,41 +264,48 @@ export function HomePage() {
     <>
       {/* Hero */}
       <section className="relative overflow-hidden bg-ink-950 text-white">
-        <div className="pointer-events-none absolute -right-40 -top-40 h-[520px] w-[520px] rounded-full bg-gold-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute -right-40 -top-40 h-[520px] w-[520px] rounded-full bg-brand-400/10 blur-3xl" />
         <div className="container-x relative grid items-center gap-12 py-16 lg:grid-cols-[1.1fr_0.9fr] lg:py-24">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full border border-gold-400/30 bg-gold-400/10 px-3 py-1 text-xs font-medium text-gold-300">
+            <p className="inline-flex items-center gap-2 rounded-full border border-brand-400/30 bg-brand-400/10 px-3 py-1 text-xs font-medium text-brand-300">
               <Zap className="h-3.5 w-3.5" aria-hidden />
               Bike · Auto · Cab · Delivery
             </p>
             <h1 className="mt-5 font-display text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
               Your ride,
               <br />
-              <span className="text-gold-400">our priority.</span>
+              <span className="text-gradient-brand">our priority.</span>
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-white/70 sm:text-lg">
               Book a bike, auto or cab in a few taps, or send a parcel across town. See the fare before you book, ride with verified riders and track every trip live.
             </p>
             <StoreButtons app="customer" className="mt-8" />
-            <Link to="/drive" className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-gold-300 hover:text-gold-400">
+            <Link to="/drive" className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-300 hover:text-brand-400">
               Want to earn with your vehicle? Drive with us <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
             <ul className="mt-10 grid gap-3 text-sm text-white/80 sm:grid-cols-3">
               <li className="flex items-center gap-2">
-                <IndianRupee className="h-4 w-4 text-gold-400" aria-hidden />
+                <IndianRupee className="h-4 w-4 text-brand-400" aria-hidden />
                 Upfront fares
               </li>
               <li className="flex items-center gap-2">
-                <KeyRound className="h-4 w-4 text-gold-400" aria-hidden />
+                <KeyRound className="h-4 w-4 text-brand-400" aria-hidden />
                 OTP-secured start
               </li>
               <li className="flex items-center gap-2">
-                <Navigation className="h-4 w-4 text-gold-400" aria-hidden />
+                <Navigation className="h-4 w-4 text-brand-400" aria-hidden />
                 Live trip tracking
               </li>
             </ul>
           </div>
           <PhoneMockup />
+        </div>
+      </section>
+
+      {/* Highlights slider */}
+      <section className="pt-12 sm:pt-16">
+        <div className="container-x">
+          <Slider label="AnZ Cabs highlights" slides={HIGHLIGHTS.map((h) => <HighlightSlide key={h.title} {...h} />)} />
         </div>
       </section>
 
@@ -300,7 +370,7 @@ export function HomePage() {
           <ol className="mt-10 grid gap-5 md:grid-cols-3">
             {STEPS.map((step, i) => (
               <li key={step.title} className="card">
-                <span className="font-display text-4xl font-semibold text-gold-400">{String(i + 1).padStart(2, '0')}</span>
+                <span className="font-display text-4xl font-semibold text-brand-400">{String(i + 1).padStart(2, '0')}</span>
                 <h3 className="mt-3 font-display text-lg font-semibold text-ink-900">{step.title}</h3>
                 <p className="mt-1.5 text-sm leading-6 text-ink-500">{step.text}</p>
               </li>
@@ -312,13 +382,13 @@ export function HomePage() {
       {/* Safety */}
       <section id="safety" className="bg-ink-950 py-20 text-white">
         <div className="container-x">
-          <p className="eyebrow text-gold-400">Safety</p>
+          <p className="eyebrow text-brand-400">Safety</p>
           <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight sm:text-4xl">Safety built into every trip</h2>
           <p className="mt-3 max-w-2xl text-white/60">Every rider is checked before they can take trips, and every trip has safeguards from pickup to drop.</p>
           <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {SAFETY.map(({ icon: Icon, title, text }) => (
               <article key={title} className="rounded-2xl border border-white/10 bg-white/5 p-6">
-                <Icon className="h-6 w-6 text-gold-400" aria-hidden />
+                <Icon className="h-6 w-6 text-brand-400" aria-hidden />
                 <h3 className="mt-4 font-semibold">{title}</h3>
                 <p className="mt-1.5 text-sm leading-6 text-white/60">{text}</p>
               </article>
@@ -351,7 +421,7 @@ export function HomePage() {
             <div className="mt-8 flex flex-wrap gap-3">
               {site.cities.map((city) => (
                 <span key={city} className="inline-flex items-center gap-2 rounded-full border border-ink-100 bg-white px-4 py-2 text-sm font-medium text-ink-800 shadow-sm">
-                  <MapPin className="h-4 w-4 text-gold-600" aria-hidden />
+                  <MapPin className="h-4 w-4 text-brand-600" aria-hidden />
                   {city}
                 </span>
               ))}
@@ -362,10 +432,10 @@ export function HomePage() {
 
       {/* Drive with us */}
       <section className="px-4 sm:px-6">
-        <div className="mx-auto grid max-w-6xl items-center gap-8 overflow-hidden rounded-3xl bg-gold-400 p-8 sm:p-12 lg:grid-cols-[1.4fr_1fr]">
+        <div className="mx-auto grid max-w-6xl items-center gap-8 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-500 to-brand-600 p-8 text-white sm:p-12 lg:grid-cols-[1.4fr_1fr]">
           <div>
-            <h2 className="font-display text-3xl font-semibold tracking-tight text-ink-950 sm:text-4xl">Own a bike, auto, cab or goods vehicle?</h2>
-            <p className="mt-3 max-w-xl text-ink-800">
+            <h2 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">Own a bike, auto, cab or goods vehicle?</h2>
+            <p className="mt-3 max-w-xl text-white/85">
               Drive with AnZ Cabs on your own schedule. Go online when you want, see the earning before you accept, and withdraw to your bank or UPI.
             </p>
           </div>
@@ -399,7 +469,7 @@ export function HomePage() {
       {/* Download */}
       <section id="download" className="bg-ink-950 py-20 text-white">
         <div className="container-x flex flex-col items-center text-center">
-          <img src="/brand/anz-logo-yellow.png" alt="AnZ Cabs – Your Ride, Our Priority" width={160} height={160} loading="lazy" className="h-40 w-40 rounded-3xl" />
+          <img src="/brand/anz-logo-blue.png" alt="AnZ Cabs – Your Ride, Our Priority" width={160} height={160} loading="lazy" className="h-40 w-40 rounded-3xl" />
           <h2 className="mt-6 font-display text-3xl font-semibold tracking-tight sm:text-4xl">Get the AnZ Cabs app</h2>
           <p className="mt-3 max-w-xl text-white/60">Book rides and deliveries, track them live and pay your way.</p>
           <StoreButtons app="customer" className="mt-8 justify-center" />

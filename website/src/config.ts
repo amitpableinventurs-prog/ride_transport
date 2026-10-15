@@ -11,10 +11,10 @@ export const site = {
   riderApp: { android: '' },
 
   contact: {
-    phone: '',
+    phone: '+91 70064 74093',
     email: '',
     whatsapp: '',
-    address: '',
+    address: '52, Afzal Complex, Court Road, Moominabad, Batamaloo, Srinagar, Jammu & Kashmir 190010',
   },
 
   /** Cities shown under "Where we operate"; keep in line with the service areas in the admin panel. */

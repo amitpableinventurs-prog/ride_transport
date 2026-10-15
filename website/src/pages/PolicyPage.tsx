@@ -73,7 +73,7 @@ export function PolicyPage() {
     <>
       <section className="bg-ink-950 py-12 text-white">
         <div className="container-x max-w-5xl">
-          <Link to="/" className="inline-flex items-center gap-1 text-sm text-white/60 hover:text-gold-400">
+          <Link to="/" className="inline-flex items-center gap-1 text-sm text-white/60 hover:text-brand-400">
             ← Home
           </Link>
           <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
@@ -117,7 +117,7 @@ export function PolicyPage() {
                   key={key}
                   to={`/policy/${key}`}
                   aria-current={key === slug ? 'page' : undefined}
-                  className={key === slug ? 'rounded-lg bg-gold-100 px-3 py-2 font-medium text-ink-900' : 'rounded-lg px-3 py-2 text-ink-500 hover:bg-ink-50 hover:text-ink-900'}
+                  className={key === slug ? 'rounded-lg bg-brand-100 px-3 py-2 font-medium text-ink-900' : 'rounded-lg px-3 py-2 text-ink-500 hover:bg-ink-50 hover:text-ink-900'}
                 >
                   {label}
                 </Link>

@@ -4,6 +4,8 @@ import { fetchPayments } from '@/api/payments'
 import type { Payment, PaginatedResult } from '@/types/finance'
 import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
+import { ExportButtons } from '@/components/common/ExportButtons'
+import { fetchAllPages } from '@/lib/fetchAll'
 
 const moneyFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
@@ -31,11 +33,29 @@ export function PaymentsPage() {
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.pageSize)) : 1
 
+  const filterSummary = [status && `Status: ${status}`, method && `Method: ${method}`, q && `Search: "${q}"`].filter(Boolean).join(' · ')
+
+  async function loadExportRows() {
+    const items = await fetchAllPages((page, limit) => fetchPayments({ status: status || undefined, method: method || undefined, q: q || undefined, page, limit }))
+    return items.map((payment) => ({
+      Booking: payment.booking?.bookingCode ?? '',
+      Customer: payment.booking?.customer?.name ?? '',
+      'Amount (INR)': payment.amount,
+      Method: payment.method,
+      Gateway: payment.gateway,
+      Status: payment.status,
+      Date: dateFmt.format(new Date(payment.createdAt)),
+    }))
+  }
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-navy-800">Payments</h1>
-        <p className="text-sm text-navy-400">Payment records collected across ride and transport bookings.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-navy-800">Payments</h1>
+          <p className="text-sm text-navy-400">Payment records collected across ride and transport bookings.</p>
+        </div>
+        <ExportButtons title="Payments" subtitle={filterSummary} loadRows={loadExportRows} disabled={!result || result.total === 0} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

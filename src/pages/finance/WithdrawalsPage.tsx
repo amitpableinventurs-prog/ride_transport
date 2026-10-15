@@ -6,6 +6,8 @@ import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
+import { ExportButtons } from '@/components/common/ExportButtons'
+import { fetchAllPages } from '@/lib/fetchAll'
 
 const moneyFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
@@ -73,13 +75,37 @@ export function WithdrawalsPage() {
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.pageSize)) : 1
 
+  const filterSummary = status ? `Status: ${status}` : 'All statuses'
+
+  async function loadExportRows() {
+    const items = await fetchAllPages((page, limit) => fetchWithdrawals({ status: status || undefined, page, limit }))
+    return items.map((withdrawal) => {
+      const account = withdrawal.bankAccount ?? {}
+      return {
+        Rider: withdrawal.driver?.name || 'Rider',
+        Phone: withdrawal.driver?.phone ?? '',
+        'Amount (INR)': withdrawal.amount,
+        'Pay to':
+          withdrawal.method === 'upi'
+            ? `UPI ${withdrawal.upiId ?? ''}`
+            : `Bank: ${account.holderName ?? ''}, A/c ${account.accountNumber ?? ''}, IFSC ${account.ifsc ?? ''}`,
+        Status: withdrawal.status,
+        Requested: dateFmt.format(new Date(withdrawal.createdAt)),
+        'Reference / reason': withdrawal.status === 'paid' ? withdrawal.reference ?? '' : withdrawal.status === 'rejected' ? withdrawal.rejectionReason ?? '' : '',
+      }
+    })
+  }
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-navy-800">Rider Withdrawals</h1>
-        <p className="text-sm text-navy-400">
-          Riders withdraw their wallet earnings (minimum set in Settings). The amount is held from the wallet until you pay it or reject it.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-navy-800">Rider Withdrawals</h1>
+          <p className="text-sm text-navy-400">
+            Riders withdraw their wallet earnings (minimum set in Settings). The amount is held from the wallet until you pay it or reject it.
+          </p>
+        </div>
+        <ExportButtons title="Rider Withdrawals" subtitle={filterSummary} loadRows={loadExportRows} disabled={!result || result.total === 0} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

@@ -6,6 +6,7 @@ import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
+import { ExportButtons } from '@/components/common/ExportButtons'
 
 export function CommissionsPage() {
   const [rules, setRules] = useState<CommissionRule[] | null>(null)
@@ -37,6 +38,16 @@ export function CommissionsPage() {
 
   if (!rules) return <LoadingScreen />
 
+  async function loadExportRows() {
+    return (rules ?? []).map((rule) => ({
+      'Applies to': rule.appliesTo,
+      Category: rule.categoryKey || 'All categories',
+      Type: rule.type,
+      Value: rule.type === 'percentage' ? `${rule.value}%` : `₹${rule.value}`,
+      Status: rule.status,
+    }))
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -44,14 +55,17 @@ export function CommissionsPage() {
           <h1 className="text-xl font-semibold text-navy-800">Commissions</h1>
           <p className="text-sm text-navy-400">Platform commission rules deducted from driver and partner earnings.</p>
         </div>
-        <PermissionGate permission="finance.manage">
-          <button
-            onClick={() => setModalRule('new')}
-            className="flex items-center gap-2 rounded-lg bg-brand-orange px-4 py-2 text-sm font-semibold text-white hover:bg-brand-orange-dark"
-          >
-            <Plus size={16} /> Add Rule
-          </button>
-        </PermissionGate>
+        <div className="flex flex-wrap items-start gap-2">
+          <ExportButtons title="Commissions" loadRows={loadExportRows} disabled={!rules || rules.length === 0} />
+          <PermissionGate permission="finance.manage">
+            <button
+              onClick={() => setModalRule('new')}
+              className="flex items-center gap-2 rounded-lg bg-brand-orange px-4 py-2 text-sm font-semibold text-white hover:bg-brand-orange-dark"
+            >
+              <Plus size={16} /> Add Rule
+            </button>
+          </PermissionGate>
+        </div>
       </div>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-red">{error}</p>}

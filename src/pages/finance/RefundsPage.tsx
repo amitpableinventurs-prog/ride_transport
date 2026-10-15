@@ -6,6 +6,8 @@ import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
+import { ExportButtons } from '@/components/common/ExportButtons'
+import { fetchAllPages } from '@/lib/fetchAll'
 
 const moneyFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
@@ -96,6 +98,29 @@ export function RefundsPage() {
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.pageSize)) : 1
 
+  const filterSummary = status ? `Status: ${status}` : ''
+
+  async function loadExportRows() {
+    const items = await fetchAllPages((page, limit) => fetchRefunds({ status: status || undefined, page, limit }))
+    return items.map((refund) => {
+      const processed = refund.status === 'processed' && refund.destination
+      return {
+        Booking: refund.booking?.bookingCode ?? '',
+        'Amount (INR)': refund.amount,
+        Reason: refund.reason,
+        Status: refund.status,
+        'Sent to': !processed
+          ? ''
+          : refund.destination === 'wallet'
+            ? 'Customer wallet'
+            : `Bank / card${refund.gatewayStatus ? ` (${refund.gatewayStatus})` : ''}`,
+        'Gateway refund ID': refund.gatewayRefundId ?? '',
+        'Requested by': refund.requestedBy ?? '',
+        Date: dateFmt.format(new Date(refund.createdAt)),
+      }
+    })
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -105,14 +130,17 @@ export function RefundsPage() {
             Online payments are refunded to the customer's bank or card through Razorpay; cash and wallet bookings are refunded to the wallet.
           </p>
         </div>
-        <PermissionGate permission="finance.manage">
-          <button
-            onClick={() => setCreating(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-orange px-3 py-2 text-sm font-semibold text-white hover:bg-brand-orange-dark"
-          >
-            <Plus size={16} /> New refund
-          </button>
-        </PermissionGate>
+        <div className="flex flex-wrap items-start gap-2">
+          <ExportButtons title="Refunds" subtitle={filterSummary} loadRows={loadExportRows} disabled={!result || result.total === 0} />
+          <PermissionGate permission="finance.manage">
+            <button
+              onClick={() => setCreating(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-orange px-3 py-2 text-sm font-semibold text-white hover:bg-brand-orange-dark"
+            >
+              <Plus size={16} /> New refund
+            </button>
+          </PermissionGate>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

@@ -4,6 +4,8 @@ import { fetchPayments } from '@/api/payments'
 import type { Payment, PaginatedResult } from '@/types/finance'
 import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
+import { ExportButtons } from '@/components/common/ExportButtons'
+import { fetchAllPages } from '@/lib/fetchAll'
 
 const moneyFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
@@ -36,11 +38,28 @@ export function TransactionsPage() {
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.pageSize)) : 1
 
+  const filterSummary = [status && `Status: ${status}`, q && `Search: "${q}"`].filter(Boolean).join(' · ')
+
+  async function loadExportRows() {
+    const items = await fetchAllPages((page, limit) => fetchPayments({ status: status || undefined, q: q || undefined, page, limit }))
+    return items.map((payment) => ({
+      'Transaction ref': payment.gatewayRefId ?? payment.id,
+      Booking: payment.booking?.bookingCode ?? '',
+      Gateway: payment.gateway,
+      'Amount (INR)': payment.amount,
+      Status: payment.status,
+      'Processed at': dateFmt.format(new Date(payment.updatedAt)),
+    }))
+  }
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-navy-800">Transactions</h1>
-        <p className="text-sm text-navy-400">Gateway-level ledger of every payment transaction processed on the platform.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-navy-800">Transactions</h1>
+          <p className="text-sm text-navy-400">Gateway-level ledger of every payment transaction processed on the platform.</p>
+        </div>
+        <ExportButtons title="Transactions" subtitle={filterSummary} loadRows={loadExportRows} disabled={!result || result.total === 0} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

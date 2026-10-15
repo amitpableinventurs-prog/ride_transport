@@ -6,6 +6,8 @@ import { Badge } from '@/components/common/Badge'
 import { Modal } from '@/components/common/Modal'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { PermissionGate } from '@/components/common/PermissionGate'
+import { ExportButtons } from '@/components/common/ExportButtons'
+import { fetchAllPages } from '@/lib/fetchAll'
 
 const moneyFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
@@ -31,11 +33,26 @@ export function WalletsPage() {
 
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.pageSize)) : 1
 
+  const filterSummary = ownerType ? `Owner type: ${ownerType}` : ''
+
+  async function loadExportRows() {
+    const items = await fetchAllPages((page, limit) => fetchWallets({ ownerType: ownerType || undefined, page, limit }))
+    return items.map((wallet) => ({
+      Owner: wallet.ownerName,
+      Type: wallet.ownerType,
+      'Balance (INR)': wallet.balance,
+      Updated: dateFmt.format(new Date(wallet.updatedAt)),
+    }))
+  }
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-navy-800">Wallets</h1>
-        <p className="text-sm text-navy-400">Customer, driver and partner wallet balances.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-navy-800">Wallets</h1>
+          <p className="text-sm text-navy-400">Customer, driver and partner wallet balances.</p>
+        </div>
+        <ExportButtons title="Wallets" subtitle={filterSummary} loadRows={loadExportRows} disabled={!result || result.total === 0} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

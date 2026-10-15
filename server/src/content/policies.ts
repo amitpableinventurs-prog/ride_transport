@@ -1,11 +1,11 @@
-// Policy pages published to the CMS with `npm run publish:policies`.
+// Policy pages (and About / Contact) published to the CMS with `npm run publish:policies`.
 // Plain text, as the CMS stores it: blank lines separate blocks, a block that is a single
 // "N. Heading" line is a section heading, and lines starting with "• " are list items.
 // Amounts the admin can change in Settings (free cancellation window, free waiting time, rider
 // dues limit, minimum payout) are not written here; the text points to the app instead.
 
 export interface PolicyContent {
-  slug: 'terms' | 'privacy' | 'cancellation' | 'refund' | 'rider_terms'
+  slug: 'terms' | 'privacy' | 'cancellation' | 'refund' | 'rider_terms' | 'about' | 'contact'
   title: string
   content: string
 }
@@ -340,10 +340,59 @@ You can request account deletion from the rider app. It is completed after any d
 
 We may update these Rider Terms and will tell you in the app about important changes. These Rider Terms are governed by the laws of India. For help or grievances, contact us through Help & Support in the rider app or on our Contact Us page.`
 
+const about = `AnZ Cabs, Your Ride, Our Priority.
+
+AnZ Cabs is a ride and delivery app based in Srinagar, Jammu & Kashmir. Customers book bikes, autos and cabs for their daily travel, and send parcels and goods across the city, all from one app.
+
+1. What we offer
+
+• Rides: Bike, Bike Lite, Auto, Cab Economy, Cab Premium and Rental Cars.
+• Deliveries: bike porters for parcels and small goods vehicles, with up to 5 drops in one trip.
+• Fares shown before you book, and payment by cash, UPI, card, netbanking or the AnZ Cabs wallet.
+
+2. Safety first
+
+Every rider's licence, vehicle papers and identity are checked before they can take trips. Each trip starts only with your Ride PIN, you can share your trip live with family, and the SOS button in the app reaches our team in one tap.
+
+3. Earn with AnZ Cabs
+
+Riders and transport partners use the AnZ Cabs rider app to take trips on their own schedule and see their earning before they accept.
+
+4. Our office
+
+AnZ Cabs
+52, Afzal Complex, Court Road, Moominabad, Batamaloo
+Srinagar, Jammu & Kashmir 190010
+
+Phone: +91 70064 74093`
+
+const contact = `We are here to help with bookings, payments, safety concerns and anything else about AnZ Cabs.
+
+1. Call us
+
+Phone: +91 70064 74093
+
+2. Visit or write to us
+
+AnZ Cabs
+52, Afzal Complex, Court Road, Moominabad, Batamaloo
+Srinagar, Jammu & Kashmir 190010
+India
+
+3. Help in the app
+
+For a question about a trip or a payment, open Help & Support in the AnZ Cabs app and choose the booking. Our team gets the trip details with your request, so we can help you faster.
+
+4. Safety emergencies
+
+During a trip, use the SOS button in the app. In an emergency, call 112.`
+
 export const POLICIES: PolicyContent[] = [
   { slug: 'terms', title: 'Terms & Conditions', content: terms },
   { slug: 'privacy', title: 'Privacy Policy', content: privacy },
   { slug: 'cancellation', title: 'Cancellation Policy', content: cancellation },
   { slug: 'refund', title: 'Refund Policy', content: refund },
   { slug: 'rider_terms', title: 'Rider Terms & Conditions', content: riderTerms },
+  { slug: 'about', title: 'About Us', content: about },
+  { slug: 'contact', title: 'Contact Us', content: contact },
 ]

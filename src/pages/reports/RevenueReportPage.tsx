@@ -6,6 +6,7 @@ import { StatCard } from '@/components/common/StatCard'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { DateRangeFilter } from '@/components/reports/DateRangeFilter'
 import { downloadCsv } from '@/lib/csv'
+import { printDocument } from '@/lib/print'
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
@@ -34,12 +35,29 @@ export function RevenueReportPage() {
       .catch(() => setError('Could not load the revenue report.'))
   }, [from, to])
 
+  /** Rows for both CSV export and print. */
+  function exportRows() {
+    return report!.byDay.map((d) => ({ Date: d.date, 'Revenue (INR)': d.revenue }))
+  }
+
   function handleExport() {
     if (!report || report.byDay.length === 0) return
-    downloadCsv(
-      `revenue-report_${from}_to_${to}`,
-      report.byDay.map((d) => ({ date: d.date, revenue: d.revenue })),
-    )
+    downloadCsv(`revenue-report_${from}_to_${to}`, exportRows())
+  }
+
+  function handlePrint() {
+    if (!report) return true
+    return printDocument({
+      title: 'AnZ Cabs — Revenue Report',
+      subtitle: `${from} to ${to}`,
+      summary: [
+        { label: 'Gross Revenue', value: currency.format(report.summary.grossRevenue) },
+        { label: 'Platform Commission', value: currency.format(report.summary.platformCommission) },
+        { label: 'Refunds', value: currency.format(report.summary.refunds) },
+        { label: 'Net Revenue', value: currency.format(report.summary.netRevenue) },
+      ],
+      rows: exportRows(),
+    })
   }
 
   if (error) {
@@ -57,7 +75,7 @@ export function RevenueReportPage() {
         <p className="text-sm text-navy-400">Gross revenue, commission and refunds for the selected date range.</p>
       </div>
 
-      <DateRangeFilter from={from} to={to} onFromChange={setFrom} onToChange={setTo} onExport={handleExport} exportDisabled={report.byDay.length === 0} />
+      <DateRangeFilter from={from} to={to} onFromChange={setFrom} onToChange={setTo} onExport={handleExport} onPrint={handlePrint} exportDisabled={report.byDay.length === 0} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Gross Revenue" value={currency.format(report.summary.grossRevenue)} icon={IndianRupee} accent="green" />

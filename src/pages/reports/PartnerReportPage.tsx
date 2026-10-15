@@ -5,6 +5,7 @@ import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { DateRangeFilter } from '@/components/reports/DateRangeFilter'
 import { downloadCsv } from '@/lib/csv'
+import { printDocument } from '@/lib/print'
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
@@ -40,19 +41,30 @@ export function PartnerReportPage() {
       .catch(() => setError('Could not load the partner report.'))
   }, [from, to])
 
+  /** Rows for both CSV export and print. */
+  function exportRows() {
+    return report!.rows.map((r) => ({
+      Company: r.companyName,
+      Vehicles: r.vehicleCount,
+      Drivers: r.driverCount,
+      'Deliveries in period': r.deliveriesInRange,
+      'Revenue in period (INR)': r.revenueInRange,
+      Status: r.status,
+    }))
+  }
+
   function handleExport() {
     if (!report || report.rows.length === 0) return
-    downloadCsv(
-      `partner-report_${from}_to_${to}`,
-      report.rows.map((r) => ({
-        companyName: r.companyName,
-        vehicleCount: r.vehicleCount,
-        driverCount: r.driverCount,
-        deliveriesInRange: r.deliveriesInRange,
-        revenueInRange: r.revenueInRange,
-        status: r.status,
-      })),
-    )
+    downloadCsv(`partner-report_${from}_to_${to}`, exportRows())
+  }
+
+  function handlePrint() {
+    if (!report) return true
+    return printDocument({
+      title: 'AnZ Cabs — Partner Report',
+      subtitle: `${from} to ${to} · ${report.rows.length} partners`,
+      rows: exportRows(),
+    })
   }
 
   if (error) {
@@ -68,7 +80,7 @@ export function PartnerReportPage() {
         <p className="text-sm text-navy-400">Per-partner fleet size and transport delivery revenue for the selected date range.</p>
       </div>
 
-      <DateRangeFilter from={from} to={to} onFromChange={setFrom} onToChange={setTo} onExport={handleExport} exportDisabled={report.rows.length === 0} />
+      <DateRangeFilter from={from} to={to} onFromChange={setFrom} onToChange={setTo} onExport={handleExport} onPrint={handlePrint} exportDisabled={report.rows.length === 0} />
 
       <div className="overflow-x-auto rounded-2xl border border-navy-100 bg-white shadow-sm">
         <table className="w-full min-w-[760px] text-left text-sm">

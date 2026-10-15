@@ -7,6 +7,7 @@ import { Badge } from '@/components/common/Badge'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { DateRangeFilter } from '@/components/reports/DateRangeFilter'
 import { downloadCsv } from '@/lib/csv'
+import { printDocument } from '@/lib/print'
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
@@ -45,20 +46,38 @@ export function BookingReportPage() {
       .catch(() => setError('Could not load the booking report.'))
   }, [from, to, mode, status])
 
+  /** Rows for both CSV export and print. */
+  function exportRows() {
+    return report!.rows.map((r) => ({
+      'Booking code': r.bookingCode,
+      Mode: r.mode,
+      Category: r.categoryKey,
+      Customer: r.customerName,
+      Driver: r.driverName,
+      Status: r.status,
+      'Fare (INR)': r.fareTotal,
+      Created: dateFmt.format(new Date(r.createdAt)),
+    }))
+  }
+
   function handleExport() {
     if (!report || report.rows.length === 0) return
-    downloadCsv(`booking-report_${from}_to_${to}`, [
-      ...report.rows.map((r) => ({
-        bookingCode: r.bookingCode,
-        mode: r.mode,
-        category: r.categoryKey,
-        customer: r.customerName,
-        driver: r.driverName,
-        status: r.status,
-        fareTotal: r.fareTotal,
-        createdAt: r.createdAt,
-      })),
-    ])
+    downloadCsv(`booking-report_${from}_to_${to}`, exportRows())
+  }
+
+  function handlePrint() {
+    if (!report) return true
+    return printDocument({
+      title: 'AnZ Cabs — Booking Report',
+      subtitle: [`${from} to ${to}`, mode, status].filter(Boolean).join(' · '),
+      summary: [
+        { label: 'Total Bookings', value: report.summary.total },
+        { label: 'Completed', value: report.summary.completed },
+        { label: 'Cancelled', value: report.summary.cancelled },
+        { label: 'Total Fare', value: currency.format(report.summary.totalFare) },
+      ],
+      rows: exportRows(),
+    })
   }
 
   if (error) {
@@ -72,7 +91,7 @@ export function BookingReportPage() {
         <p className="text-sm text-navy-400">Bookings across Ride and Transport, filtered by date range.</p>
       </div>
 
-      <DateRangeFilter from={from} to={to} onFromChange={setFrom} onToChange={setTo} onExport={handleExport} exportDisabled={!report || report.rows.length === 0} />
+      <DateRangeFilter from={from} to={to} onFromChange={setFrom} onToChange={setTo} onExport={handleExport} onPrint={handlePrint} exportDisabled={!report || report.rows.length === 0} />
 
       <div className="flex flex-wrap gap-3">
         <select

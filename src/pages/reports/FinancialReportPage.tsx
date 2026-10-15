@@ -6,6 +6,7 @@ import { StatCard } from '@/components/common/StatCard'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { DateRangeFilter } from '@/components/reports/DateRangeFilter'
 import { downloadCsv } from '@/lib/csv'
+import { printDocument } from '@/lib/print'
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
@@ -34,18 +35,36 @@ export function FinancialReportPage() {
       .catch(() => setError('Could not load the financial report.'))
   }, [from, to])
 
+  /** Rows for both CSV export and print. */
+  function exportRows() {
+    return report!.rows.map((r) => ({
+      Date: r.date,
+      Payments: r.paymentsCount,
+      'Payments (INR)': r.paymentsAmount,
+      Refunds: r.refundsCount,
+      'Refunds (INR)': r.refundsAmount,
+    }))
+  }
+
   function handleExport() {
     if (!report || report.rows.length === 0) return
-    downloadCsv(
-      `financial-report_${from}_to_${to}`,
-      report.rows.map((r) => ({
-        date: r.date,
-        paymentsCount: r.paymentsCount,
-        paymentsAmount: r.paymentsAmount,
-        refundsCount: r.refundsCount,
-        refundsAmount: r.refundsAmount,
-      })),
-    )
+    downloadCsv(`financial-report_${from}_to_${to}`, exportRows())
+  }
+
+  function handlePrint() {
+    if (!report) return true
+    return printDocument({
+      title: 'AnZ Cabs — Financial Report',
+      subtitle: `${from} to ${to}`,
+      summary: [
+        { label: 'Gross Revenue', value: currency.format(report.summary.grossRevenue) },
+        { label: 'Refunds', value: currency.format(report.summary.refunds) },
+        { label: 'Net Revenue', value: currency.format(report.summary.netRevenue) },
+        { label: 'Wallet Credits', value: currency.format(report.summary.walletCreditsTotal) },
+        { label: 'Wallet Debits', value: currency.format(report.summary.walletDebitsTotal) },
+      ],
+      rows: exportRows(),
+    })
   }
 
   if (error) {
@@ -61,7 +80,7 @@ export function FinancialReportPage() {
         <p className="text-sm text-navy-400">Day-by-day payments, refunds and wallet movement ledger.</p>
       </div>
 
-      <DateRangeFilter from={from} to={to} onFromChange={setFrom} onToChange={setTo} onExport={handleExport} exportDisabled={report.rows.length === 0} />
+      <DateRangeFilter from={from} to={to} onFromChange={setFrom} onToChange={setTo} onExport={handleExport} onPrint={handlePrint} exportDisabled={report.rows.length === 0} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard label="Gross Revenue" value={currency.format(report.summary.grossRevenue)} icon={IndianRupee} accent="green" />

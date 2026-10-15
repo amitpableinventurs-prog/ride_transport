@@ -23,6 +23,15 @@ export async function connectDb(): Promise<void> {
   const { Customer } = await import('../models/Customer')
   const { Driver } = await import('../models/Driver')
   const { TransportPartner } = await import('../models/TransportPartner')
+  // Ride PINs became unique after some were given out: a shared PIN is cleared from all but the oldest account
+  // (those get a new one at their next login or booking), so the unique index can be built.
+  const sharedPins = await Customer.aggregate<{ ids: unknown[] }>([
+    { $match: { ridePin: { $type: 'string' } } },
+    { $sort: { createdAt: 1 } },
+    { $group: { _id: '$ridePin', ids: { $push: '$_id' }, n: { $sum: 1 } } },
+    { $match: { n: { $gt: 1 } } },
+  ])
+  for (const { ids } of sharedPins) await Customer.updateMany({ _id: { $in: ids.slice(1) } }, { $unset: { ridePin: 1 } })
   await Promise.all([Customer.syncIndexes(), Driver.syncIndexes(), TransportPartner.syncIndexes()])
 
   // Partners created before partner codes existed get one (riders enter it during onboarding).

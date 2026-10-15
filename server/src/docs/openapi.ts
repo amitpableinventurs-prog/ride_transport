@@ -347,7 +347,7 @@ const customerBooking = obj({
     'Assigned rider (phone hidden; call through POST /bookings/{id}/call); null while searching',
   ),
   vehicle: bookingVehicle,
-  startOtp: str({ example: '4821', description: 'Customer reads it to the rider to start the trip' }),
+  startOtp: str({ example: '4821', description: "The customer's fixed Ride PIN (same for every trip); the customer reads it to the rider to start the trip" }),
 })
 const { otp: _stopOtp, ...riderStopFields } = bookingStop.properties
 /** Booking as the rider app sees it: customer details without phone, earnings split, no OTPs. */
@@ -775,7 +775,7 @@ const customerPaths = {
         '`refer_and_earn` is left out while referrals are switched off. Log out with POST /app/auth/logout.',
       ].join('\n\n'),
       response: obj({
-        user: obj({ id: oid(), name: str({ example: 'Nikhil Sajjan' }), phone: str({ example: '+919988776655' }), photoUrl: nullable(str()), rating: num({ example: 4.5 }), profileComplete: bool() }),
+        user: obj({ id: oid(), name: str({ example: 'Nikhil Sajjan' }), phone: str({ example: '+919988776655' }), photoUrl: nullable(str()), rating: num({ example: 4.5 }), ridePin: str({ example: '4821', description: 'Fixed PIN the customer tells the rider to start every trip' }), profileComplete: bool() }),
         items: arr(
           obj({
             key: enumOf(MENU_KEYS),

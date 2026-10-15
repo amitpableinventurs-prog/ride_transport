@@ -3,6 +3,7 @@ import { Customer } from '../../models/Customer'
 import { Driver } from '../../models/Driver'
 import { TransportPartner } from '../../models/TransportPartner'
 import { Device } from '../../models/Device'
+import { ensureRidePin } from '../../services/trips'
 import {
   APP_USER_TYPES,
   signAppAccessToken,
@@ -24,6 +25,11 @@ const INACTIVE_MESSAGE = 'This account has been suspended or blocked. Please con
 
 function otpKey(userType: AppUserType, phone: string) {
   return `${userType}:${phone}`
+}
+
+/** Customers get their fixed Ride PIN at their first login (accounts made before it existed included). */
+async function prepareSignIn(user: AppUser) {
+  if (user.type === 'customer') await ensureRidePin(user.doc._id)
 }
 
 function issueTokens(user: AppUser) {
@@ -111,6 +117,7 @@ export async function verifyOtpAndLogin(req: Request, res: Response) {
     return
   }
 
+  await prepareSignIn(user)
   res.json({ isNewUser: false, ...issueTokens(user) })
 }
 
@@ -146,6 +153,7 @@ export async function verifyOtpAndSignIn(req: Request, res: Response) {
         : { type: 'driver', doc: await Driver.create({ phone: input.phone }) }
   }
 
+  await prepareSignIn(user)
   res.status(existing ? 200 : 201).json({ isNewUser: !existing, ...issueTokens(user) })
 }
 
@@ -211,6 +219,7 @@ export async function register(req: Request, res: Response) {
     user = { type: 'partner', doc }
   }
 
+  await prepareSignIn(user)
   res.status(201).json(issueTokens(user))
 }
 

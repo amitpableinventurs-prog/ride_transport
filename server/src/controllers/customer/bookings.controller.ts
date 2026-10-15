@@ -15,6 +15,7 @@ import {
   applyCancellationCharge,
   customerCancellationCharge,
   generateBookingCode,
+  ensureRidePin,
   generateTripOtp,
   parseScore,
   refreshAverageRating,
@@ -228,7 +229,7 @@ export async function createBooking(req: Request, res: Response) {
     durationMin: priced.durationMin,
     paymentMethod,
     serviceArea: area._id,
-    startOtp: generateTripOtp(),
+    startOtp: await ensureRidePin(customer._id),
     timeline: [{ status, note: scheduledAt ? `Scheduled for ${scheduledAt.toISOString()}` : 'Booking created' }],
   })
   if (couponCode) await Coupon.updateOne({ code: couponCode }, { $inc: { usedCount: 1 } })

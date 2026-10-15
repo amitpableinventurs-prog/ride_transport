@@ -7,6 +7,7 @@ import { Booking, OPEN_BOOKING_STATUSES } from '../../models/Booking'
 import { CmsPage } from '../../models/CmsPage'
 import type { CustomerDocument } from '../../models/Customer'
 import { CLAIM_TYPES, Ticket } from '../../models/Ticket'
+import { ensureRidePin } from '../../services/trips'
 import { isProfileComplete } from '../../utils/appUsers'
 import { HttpError, parseAmount, parsePagination, requireObjectId, requireString } from '../../utils/http'
 import { getPlatformSettings } from '../../utils/settings'
@@ -37,7 +38,7 @@ export async function getProfileMenu(req: Request, res: Response) {
   ])
 
   res.json({
-    user: { id: customer.id, name: customer.name, phone: customer.phone, photoUrl: customer.photoUrl ?? null, rating: customer.rating, profileComplete: isProfileComplete(req.appUser!) },
+    user: { id: customer.id, name: customer.name, phone: customer.phone, photoUrl: customer.photoUrl ?? null, rating: customer.rating, ridePin: await ensureRidePin(customer._id), profileComplete: isProfileComplete(req.appUser!) },
     items: [
       { key: 'help', title: 'Help' },
       { key: 'payment', title: 'Payment' },

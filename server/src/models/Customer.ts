@@ -33,6 +33,8 @@ const customerSchema = new Schema(
     referralCode: { type: String, unique: true, sparse: true, uppercase: true, trim: true },
     referredBy: { type: Schema.Types.ObjectId, ref: 'Customer', default: null },
     referralRewardedAt: { type: Date },
+    // Fixed 4-digit Ride PIN, unique per customer, set once at first login and used as the start OTP of every trip (see ensureRidePin).
+    ridePin: { type: String },
     // anzcabs Coins balance (ledger in CoinTransaction).
     coins: { type: Number, default: 0 },
     // Settings screen. Trip and payment notifications are always sent; offers can be switched off.
@@ -44,6 +46,9 @@ const customerSchema = new Schema(
   },
   { timestamps: true, toJSON: idToJson },
 )
+
+// No two customers share a Ride PIN; accounts without one yet are left out of the index.
+customerSchema.index({ ridePin: 1 }, { unique: true, partialFilterExpression: { ridePin: { $type: 'string' } } })
 
 export type CustomerDocument = InferSchemaType<typeof customerSchema>
 export const Customer = model('Customer', customerSchema)

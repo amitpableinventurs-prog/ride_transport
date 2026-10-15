@@ -24,6 +24,45 @@ export function generateTripOtp(): string {
   return crypto.randomInt(0, 10_000).toString().padStart(4, '0')
 }
 
+// Ride PINs are 4 digits (what the rider app takes), so at most 10,000 customers can have one.
+const RIDE_PIN_COUNT = 10_000
+const RIDE_PIN_RANDOM_TRIES = 20
+
+/** A PIN no customer has yet, or null when all are taken. */
+async function randomFreeRidePin(): Promise<string | null> {
+  const taken = new Set<string>(await Customer.distinct('ridePin', { ridePin: { $type: 'string' } }))
+  const free: string[] = []
+  for (let n = 0; n < RIDE_PIN_COUNT; n++) {
+    const pin = String(n).padStart(4, '0')
+    if (!taken.has(pin)) free.push(pin)
+  }
+  return free.length ? free[crypto.randomInt(free.length)] : null
+}
+
+/**
+ * The customer's own Ride PIN, created once and unique to them (a unique index enforces it);
+ * every trip starts with it instead of a new OTP.
+ */
+export async function ensureRidePin(customerId: Types.ObjectId | string): Promise<string> {
+  const existing = await Customer.findById(customerId).select('ridePin')
+  if (existing?.ridePin) return existing.ridePin
+
+  // Random PINs first; once they keep colliding (most PINs taken), pick from the free ones.
+  for (let attempt = 0; attempt < RIDE_PIN_RANDOM_TRIES + 3; attempt++) {
+    const pin = attempt < RIDE_PIN_RANDOM_TRIES ? generateTripOtp() : await randomFreeRidePin()
+    if (!pin) break
+    try {
+      // Only set while still empty so two concurrent logins cannot end up with different PINs.
+      await Customer.updateOne({ _id: customerId, ridePin: { $in: [null, ''] } }, { $set: { ridePin: pin } })
+      return (await Customer.findById(customerId).select('ridePin'))!.ridePin!
+    } catch (err) {
+      if ((err as { code?: number }).code !== 11000) throw err // another customer has this PIN: try another
+    }
+  }
+  console.error('[ride-pin] no free Ride PIN left for customer', customerId.toString())
+  throw new HttpError(503, 'Could not set up your Ride PIN. Please try again later.')
+}
+
 /** Pickup → stops (transport) or pickup → drop (ride), as points. */
 export function routePoints(booking: Pick<BookingDocument, 'pickup' | 'drop' | 'stops' | 'mode'>): LatLng[] {
   const points: LatLng[] = [{ lat: booking.pickup!.lat!, lng: booking.pickup!.lng! }]

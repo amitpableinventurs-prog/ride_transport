@@ -226,25 +226,6 @@ export async function settleBookingPayment(
   return booking
 }
 
-// ---------- Cancellation ----------
-
-/** Customer cancellation charge: free while searching or within the free window after a rider accepts. */
-export async function customerCancellationCharge(booking: BookingDoc, freeCancellationMinutes: number): Promise<number> {
-  if (!booking.driver || !booking.acceptedAt) return 0
-  const minutesSinceAccept = (Date.now() - booking.acceptedAt.getTime()) / 60_000
-  if (booking.status !== 'arrived' && minutesSinceAccept <= freeCancellationMinutes) return 0
-  const rule = await findPricingRule(booking.categoryKey, booking.serviceArea)
-  return rule?.cancellationFee ?? 0
-}
-
-/** Charges the customer (wallet may go negative) and compensates the rider. */
-export async function applyCancellationCharge(booking: BookingDoc, charge: number) {
-  if (charge <= 0 || !booking.driver) return
-  const ref = { referenceType: 'Booking', referenceId: booking._id }
-  await debitWallet({ ownerType: 'customer', ownerId: booking.customer, amount: charge, reason: 'penalty', allowNegative: true, ...ref })
-  await creditWallet({ ownerType: 'driver', ownerId: booking.driver, amount: charge, reason: 'booking_earning', ...ref })
-}
-
 // ---------- Ratings ----------
 
 export async function refreshAverageRating(target: 'driver' | 'customer', id: Types.ObjectId) {

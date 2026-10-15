@@ -26,7 +26,6 @@ import { SettlementsPage } from '@/pages/finance/SettlementsPage'
 import { RidePricingPage } from '@/pages/pricing/RidePricingPage'
 import { TransportPricingPage } from '@/pages/pricing/TransportPricingPage'
 import { SurgePricingPage } from '@/pages/pricing/SurgePricingPage'
-import { CancellationChargesPage } from '@/pages/pricing/CancellationChargesPage'
 import { CouponsPage } from '@/pages/marketing/CouponsPage'
 import { OffersPage } from '@/pages/marketing/OffersPage'
 import { BannersPage } from '@/pages/marketing/BannersPage'
@@ -77,7 +76,6 @@ const PAGES: Record<string, ComponentType> = {
   '/pricing/ride': RidePricingPage,
   '/pricing/transport': TransportPricingPage,
   '/pricing/surge': SurgePricingPage,
-  '/pricing/cancellation-charges': CancellationChargesPage,
   '/marketing/coupons': CouponsPage,
   '/marketing/offers': OffersPage,
   '/marketing/banners': BannersPage,

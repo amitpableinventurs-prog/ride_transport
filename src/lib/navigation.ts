@@ -22,7 +22,6 @@ import {
   Tags,
   Gauge,
   BadgePercent,
-  Ban,
   Ticket,
   Image,
   Bell,
@@ -132,7 +131,6 @@ export const navGroups: NavGroup[] = [
       { label: 'Ride Pricing', path: '/pricing/ride', icon: Tags, permission: 'pricing.view' },
       { label: 'Transport Pricing', path: '/pricing/transport', icon: Package, permission: 'pricing.view' },
       { label: 'Surge Pricing', path: '/pricing/surge', icon: Gauge, permission: 'pricing.view' },
-      { label: 'Cancellation Charges', path: '/pricing/cancellation-charges', icon: Ban, permission: 'pricing.view' },
     ],
   },
   {

@@ -51,18 +51,17 @@ Tips are optional. You can add a tip from your AnZ Cabs wallet when you rate a t
 • You can pay the rider in cash, or pay in the app by UPI, debit or credit card, netbanking or your AnZ Cabs wallet.
 • Online payments are processed by our payment partner (Razorpay). We do not store your card number, CVV or UPI PIN.
 • If you choose wallet payment and the balance is not enough when the trip ends, you can pay the fare online from the app instead.
-• Pay for every completed trip. Unpaid amounts and cancellation fees are recorded against your account and may need to be cleared before your next booking.
+• Pay for every completed trip. Unpaid amounts are recorded against your account and may need to be cleared before your next booking.
 
 6. AnZ Cabs wallet
 
 • You can add ₹10 to ₹10,000 at a time to your wallet and use it to pay for trips, tips and charges on AnZ Cabs.
 • Refunds may be credited to the wallet as described in the Refund Policy.
-• Cancellation fees are taken from the wallet, so its balance can go below zero until you add money.
 • The wallet balance can be used only on AnZ Cabs. It cannot be transferred to another person or withdrawn to a bank account.
 
 7. Cancellations
 
-You can cancel a booking from the app. Whether a cancellation fee applies is explained in our Cancellation Policy.
+You can cancel a booking from the app free of charge, as explained in our Cancellation Policy.
 
 8. Deliveries
 
@@ -186,55 +185,40 @@ We may update this policy. The updated date is shown on this page, and we will t
 
 Contact us through Help & Support in the app. Our Grievance Officer's details are on the Contact Us page.`
 
-const cancellation = `This policy explains when you can cancel a booking on AnZ Cabs, when a cancellation fee applies and what happens when a rider cancels.
+const cancellation = `This policy explains when you can cancel a booking on AnZ Cabs and what happens when a rider cancels.
 
-1. Cancelling before a rider is assigned
+1. Cancelling is free
 
-Cancelling while we are still looking for a rider is always free.
+AnZ Cabs does not charge a cancellation fee. You can cancel a booking from the app at no cost while we are looking for a rider, after a rider accepts and after the rider arrives at your pickup point, as long as the trip has not started.
 
-2. Cancelling after a rider accepts
-
-• Cancelling within the free cancellation window after a rider accepts is free. The window is shown in the app.
-• A cancellation fee applies if you cancel after the free window, or at any time after the rider has arrived at your pickup point.
-• The fee depends on the vehicle type and city. The app shows the amount charged when you cancel.
-
-3. How the fee is charged
-
-The cancellation fee is taken from your AnZ Cabs wallet and paid to the rider for the time and fuel spent coming to you. If your wallet does not have enough balance, it can go below zero. Add money to clear it before your next booking.
-
-4. If no rider is found
+2. If no rider is found
 
 If no rider accepts your booking, nothing is charged. You can try again from the app.
 
-5. If the rider cancels
+3. If the rider cancels
 
 If your rider cancels, you are not charged. We automatically look for another rider for the same booking.
 
-6. Scheduled bookings
+4. Scheduled bookings
 
-A scheduled booking can be cancelled free of charge until a rider is assigned. After that, the rules in section 2 apply.
+A scheduled booking can be cancelled free of charge until the trip starts.
 
-7. Deliveries
+5. Deliveries
 
-A delivery can be cancelled until the goods are picked up, under the same rules as rides. Once the goods have been picked up, the booking cannot be cancelled in the app. Contact us through Help & Support if you need to change or stop a delivery.
+A delivery can be cancelled free of charge until the goods are picked up. Once the goods have been picked up, the booking cannot be cancelled in the app. Contact us through Help & Support if you need to change or stop a delivery.
 
-8. Waiting time
+6. Waiting time
 
 After the rider arrives, waiting is free for the time shown in the app. After that, waiting charges are added to the fare.
 
-9. Repeated cancellations
+7. Repeated cancellations
 
-Frequent cancellations, or bookings made without the intention to travel, may lead to restrictions on your account.
-
-10. Disputes
-
-If you think a cancellation fee was charged by mistake, for example because the rider did not come to the pickup point, contact us through Help & Support within 7 days with the booking ID. If the fee was charged wrongly, we refund it as described in our Refund Policy.`
+Frequent cancellations, or bookings made without the intention to travel, may lead to restrictions on your account.`
 
 const refund = `This policy explains when AnZ Cabs refunds money, how to ask for a refund and where the money goes.
 
 1. When we refund
 
-• You were charged a cancellation fee that should not have applied.
 • You were charged more than the correct fare, for example because of a wrong waiting time or a route the rider took without reason.
 • You paid online but the trip did not take place.
 • You paid twice for the same trip.
@@ -262,7 +246,6 @@ You get a notification in the app when your refund is processed.
 6. What is not refunded
 
 • Fares and charges for trips completed as booked.
-• Cancellation fees charged correctly under our Cancellation Policy.
 • Tips, which go in full to the rider.
 • Wallet balance cannot be refunded to a bank account. It stays available for use on AnZ Cabs.
 
@@ -320,7 +303,6 @@ During an active trip the app shows the customer's mobile number so you can call
 • AnZ Cabs charges a commission on each trip, depending on the vehicle type and city. Your earning for a trip is shown before you accept and after you complete it.
 • For trips paid online or by wallet, your earning is added to your AnZ Cabs rider wallet.
 • Tips customers add go to you in full.
-• If a customer cancels after the free cancellation window or after you arrive, you receive the cancellation fee charged to them.
 
 9. Cash trips and dues
 

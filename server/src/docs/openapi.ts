@@ -1037,13 +1037,12 @@ const customerPaths = {
     }),
   },
   '/bookings/{id}/cancel': {
-    post: appOp('Customer', 'Cancel with reason; returns the charge applied', {
-      description:
-        'Free while searching and for `freeCancellationMinutes` (default 2) after a rider accepts. After that, or once the rider has arrived, the category cancellation fee is charged to the wallet and paid to the rider.',
+    post: appOp('Customer', 'Cancel with reason', {
+      description: 'Cancelling is always free. `chargeApplied` is kept for older app versions and is always 0.',
       parameters: [bookingIdParam],
       body: obj({ reason: str() }),
       bodyRequired: false,
-      response: obj({ ...customerBooking.properties, chargeApplied: money(25) }),
+      response: obj({ ...customerBooking.properties, chargeApplied: money(0) }),
       errors: [404, 409],
     }),
   },

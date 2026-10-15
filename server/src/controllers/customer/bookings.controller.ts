@@ -12,8 +12,6 @@ import { ServiceCategory, type ServiceCategoryDocument } from '../../models/Serv
 import { emitBookingEvent, emitToRider, joinBookingRoom, leaveBookingRoom } from '../../realtime/socket'
 import { startDispatch, stopDispatch } from '../../services/dispatch'
 import {
-  applyCancellationCharge,
-  customerCancellationCharge,
   generateBookingCode,
   ensureRidePin,
   generateTripOtp,
@@ -323,8 +321,8 @@ export async function cancelBooking(req: Request, res: Response) {
   if (!CUSTOMER_CANCELLABLE.includes(booking.status)) throw new HttpError(409, 'This booking can no longer be cancelled')
   const reason = optionalString((req.body ?? {}).reason, 300) ?? 'Cancelled by customer'
 
-  const settings = await getPlatformSettings()
-  const charge = await customerCancellationCharge(booking, settings.freeCancellationMinutes)
+  // Cancelling is always free; `charge` stays 0 in the response and events for the apps.
+  const charge = 0
   const offeredTo = booking.status === 'requested' ? booking.offer?.driver : null
 
   const cancelled = await Booking.findOneAndUpdate(
@@ -338,7 +336,6 @@ export async function cancelBooking(req: Request, res: Response) {
   if (!cancelled) throw new HttpError(409, 'The booking changed in the meantime. Please refresh and try again.')
 
   stopDispatch(booking.id)
-  await applyCancellationCharge(cancelled, charge)
   if (cancelled.couponCode) await Coupon.updateOne({ code: cancelled.couponCode, usedCount: { $gt: 0 } }, { $inc: { usedCount: -1 } })
   if (offeredTo) emitToRider(offeredTo, 'booking:request_expired', { bookingId: booking.id })
   if (cancelled.driver) {

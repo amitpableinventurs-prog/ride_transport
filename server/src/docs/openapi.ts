@@ -1286,7 +1286,7 @@ const riderPaths = {
     post: multipart(
       appOp('Rider', 'Upload a document (front, back, number)', {
         description:
-          'Re-uploading a type replaces it and sends it back for review. Needed for approval: driving_license (front + back, unless the rider has no licence) and one of aadhaar / pan. Number formats: driving licence like KA12345677899029, Aadhaar 12 digits, PAN like ABCDE1234F. vehicle_rc is uploaded with the vehicle (POST /vehicle) or here.',
+          'Re-uploading a type replaces it and sends it back for review. Needed for approval: driving_license (front + back, unless the rider has no licence) and one of aadhaar / pan. Number formats: driving licence like KA12345677899029, Aadhaar 12 digits or its 16-digit Virtual ID, PAN like ABCDE1234F. vehicle_rc is uploaded with the vehicle (POST /vehicle) or here.',
         response: documentEntity,
         status: 201,
         errors: [400, 409],

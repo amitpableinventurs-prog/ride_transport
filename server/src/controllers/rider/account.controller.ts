@@ -136,7 +136,8 @@ function normalizeDocNumber(docType: string, raw: string): string {
   const value = raw.toUpperCase().replace(/[\s-]/g, '')
   const rules: Record<string, [RegExp, string]> = {
     driving_license: [/^[A-Z]{2}\d{2}[A-Z0-9]{9,13}$/, 'Enter a valid driving licence number, e.g. KA12345677899029'],
-    aadhaar: [/^\d{12}$/, 'Aadhaar number must be 12 digits'],
+    // 12-digit Aadhaar number, or the 16-digit Virtual ID (VID) that UIDAI issues in its place.
+    aadhaar: [/^(\d{12}|\d{16})$/, 'Enter your 12-digit Aadhaar number or 16-digit Virtual ID'],
     pan: [/^[A-Z]{5}\d{4}[A-Z]$/, 'Enter a valid PAN, e.g. ABCDE1234F'],
   }
   const rule = rules[docType]

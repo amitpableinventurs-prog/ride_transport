@@ -164,9 +164,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <div className={clsx('flex items-center py-5', mini ? 'justify-center px-3' : 'justify-between px-5')}>
             <div className="flex items-center gap-3">
               <img
-                src="/brand/anz-icon-blue.png"
+                src="/brand/anz-icon.png"
                 alt="AnZ Cabs"
-                className="h-10 w-10 shrink-0 rounded-xl bg-black object-cover shadow-lg shadow-black/40 ring-1 ring-white/20"
+                className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain shadow-lg shadow-black/40 ring-1 ring-white/20"
               />
               {!mini && (
                 <div>

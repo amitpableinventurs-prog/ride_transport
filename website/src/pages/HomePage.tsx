@@ -469,7 +469,7 @@ export function HomePage() {
       {/* Download */}
       <section id="download" className="bg-ink-950 py-20 text-white">
         <div className="container-x flex flex-col items-center text-center">
-          <img src="/brand/anz-logo-blue.png" alt="AnZ Cabs – Your Ride, Our Priority" width={160} height={160} loading="lazy" className="h-40 w-40 rounded-3xl" />
+          <img src="/brand/anz-logo.png" alt="AnZ Cabs & Logistics – Connecting People. Moving Possibilities." width={800} height={490} loading="lazy" className="h-auto w-64 rounded-3xl bg-white p-5" />
           <h2 className="mt-6 font-display text-3xl font-semibold tracking-tight sm:text-4xl">Get the AnZ Cabs app</h2>
           <p className="mt-3 max-w-xl text-white/60">Book rides and deliveries, track them live and pay your way.</p>
           <StoreButtons app="customer" className="mt-8 justify-center" />

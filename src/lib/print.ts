@@ -43,7 +43,7 @@ export function printTable(win: Window, doc: PrintDocument): void {
   * { box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #0c1424; margin: 24px; }
   header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-  header img { width: 44px; height: 44px; border-radius: 10px; background: #000; }
+  header img { height: 48px; width: auto; }
   h1 { font-size: 18px; margin: 0; }
   p { margin: 2px 0 0; font-size: 12px; color: #4a5f8f; }
   .summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
@@ -60,7 +60,7 @@ export function printTable(win: Window, doc: PrintDocument): void {
 </style></head>
 <body>
   <header>
-    <img src="${window.location.origin}/brand/anz-logo-blue.png" alt="">
+    <img src="${window.location.origin}/brand/anz-logo.png" alt="">
     <div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(meta)}</p></div>
   </header>
   ${summaryHtml}

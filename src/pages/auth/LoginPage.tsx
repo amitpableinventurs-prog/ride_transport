@@ -43,9 +43,11 @@ export function LoginPage() {
       <div className="relative w-full max-w-md">
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
           <img
-            src="/brand/anz-logo-blue.png"
-            alt="AnZ Cabs — Your Ride, Our Priority"
-            className="h-28 w-28 rounded-3xl bg-black object-contain shadow-xl shadow-black/40 ring-1 ring-white/10"
+            src="/brand/anz-logo.png"
+            alt="AnZ Cabs & Logistics — Connecting People. Moving Possibilities."
+            width={800}
+            height={490}
+            className="h-auto w-60 rounded-3xl bg-white p-4 shadow-xl shadow-black/40 ring-1 ring-white/10"
           />
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-white">AnZ Cabs Admin</h1>

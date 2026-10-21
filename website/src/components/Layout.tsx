@@ -15,7 +15,7 @@ const NAV = [
 export function Logo({ size = 36 }: { size?: number }) {
   return (
     <Link to="/" className="flex items-center gap-2.5" aria-label="AnZ Cabs home">
-      <img src="/brand/anz-icon-blue.png" alt="" width={size} height={size} className="rounded-lg" style={{ width: size, height: size }} />
+      <img src="/brand/anz-icon.png" alt="" width={size} height={size} className="rounded-lg bg-white" style={{ width: size, height: size }} />
       <span className="font-display text-lg font-semibold tracking-tight text-white">
         AnZ <span className="text-brand-400">Cabs</span>
       </span>

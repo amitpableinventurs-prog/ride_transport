@@ -9,9 +9,13 @@ React 19 + React Router + Tailwind CSS, built with Vite.
 |---|---|---|
 | `/` | `src/pages/HomePage.tsx` | Rides, delivery, how it works, safety, payments, cities, FAQ, app download |
 | `/drive` | `src/pages/DrivePage.tsx` | Rider recruitment and transport partners |
-| `/policy/:slug` | `src/pages/PolicyPage.tsx` | A page from the admin panel's CMS: `terms`, `privacy`, `cancellation`, `refund`, `rider_terms`, `rider_privacy`, `partner_terms`, `about`, `contact`, `faq` |
+| `/about` | `src/pages/AboutPage.tsx` | Story, mission, services, values, cities, office; the story is the CMS `about` page once it has content |
+| `/gallery` | `src/pages/GalleryPage.tsx` | Photo gallery (from `site.gallery` in `src/config.ts`, files in `public/gallery/`) and brand logos to download |
+| `/contact` | `src/pages/ContactPage.tsx` | Phone, WhatsApp, email and office from `site.contact`, help topics, map; shows the CMS `contact` page text once it has content |
+| `/policy/:slug` | `src/pages/PolicyPage.tsx` | A page from the admin panel's CMS: `terms`, `privacy`, `cancellation`, `refund`, `rider_terms`, `rider_privacy`, `partner_terms`, `faq` (`about` and `contact` redirect to the pages above) |
 
-The header and footer are in `src/components/Layout.tsx`.
+The header and footer are in `src/components/Layout.tsx`. To change the gallery, put the images in `public/gallery/` and edit the
+`gallery` list in `src/config.ts`; the illustrations there now are placeholders until real photos are added.
 
 ## Setup
 

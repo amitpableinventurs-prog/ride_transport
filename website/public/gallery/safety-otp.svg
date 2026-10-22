@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+<defs>
+<linearGradient id="day" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9eaff"/><stop offset="1" stop-color="#f4f9ff"/></linearGradient>
+<linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#050b1c"/><stop offset="1" stop-color="#14254a"/></linearGradient>
+<linearGradient id="brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0d2f5e"/><stop offset="1" stop-color="#14899a"/></linearGradient>
+
+</defs>
+<rect width="1200" height="800" fill="url(#day)"/>
+<circle cx="600" cy="380" r="300" fill="#d9eaff"/>
+<path d="M600 110 L 820 190 L 820 380 Q 820 560 600 660 Q 380 560 380 380 L 380 190 Z" fill="#0d2f5e"/>
+<path d="M600 150 L 785 218 L 785 380 Q 785 530 600 618 Q 415 530 415 380 L 415 218 Z" fill="#14899a"/>
+<path d="M505 380 L 575 450 L 705 310" fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+<g font-family="Poppins,Arial,sans-serif" font-weight="700" font-size="54" fill="#0d2f5e" text-anchor="middle">
+<rect x="396" y="680" width="84" height="84" rx="16" fill="#fff" stroke="#2f8fff" stroke-width="4"/><text x="438" y="740">4</text><rect x="504" y="680" width="84" height="84" rx="16" fill="#fff" stroke="#2f8fff" stroke-width="4"/><text x="546" y="740">8</text><rect x="612" y="680" width="84" height="84" rx="16" fill="#fff" stroke="#2f8fff" stroke-width="4"/><text x="654" y="740">2</text><rect x="720" y="680" width="84" height="84" rx="16" fill="#fff" stroke="#2f8fff" stroke-width="4"/><text x="762" y="740">7</text>
+</g>
+</svg>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Mail, MapPin, Menu, MessageCircle, Phone, Smartphone, X, type LucideIcon } from 'lucide-react'
+import { Menu, Smartphone, X } from 'lucide-react'
 import { site } from '@/config'
+import { contactChannels } from '@/lib/contact'
 import { StoreButtons } from './StoreButtons'
 
 const NAV = [
@@ -10,6 +11,9 @@ const NAV = [
   { label: 'Safety', to: '/#safety' },
   { label: 'Drive with us', to: '/drive' },
   { label: 'FAQ', to: '/#faq' },
+  { label: 'About', to: '/about' },
+  { label: 'Gallery', to: '/gallery' },
+  { label: 'Contact', to: '/contact' },
 ]
 
 export function Logo({ size = 36 }: { size?: number }) {
@@ -53,7 +57,7 @@ function Header() {
       </a>
       <div className="container-x flex h-16 items-center justify-between gap-4">
         <Logo />
-        <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
+        <nav className="hidden items-center gap-0.5 lg:flex" aria-label="Main">
           {NAV.map((item) =>
             item.to.includes('#') ? (
               <Link key={item.to} to={item.to} className="nav-link">
@@ -74,7 +78,7 @@ function Header() {
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="rounded-full p-2 text-white hover:bg-white/10 md:hidden"
+            className="rounded-full p-2 text-white hover:bg-white/10 lg:hidden"
             aria-expanded={open}
             aria-controls="mobile-menu"
             aria-label={open ? 'Close menu' : 'Open menu'}
@@ -85,7 +89,7 @@ function Header() {
       </div>
 
       {open && (
-        <nav id="mobile-menu" className="border-t border-white/10 md:hidden" aria-label="Mobile">
+        <nav id="mobile-menu" className="border-t border-white/10 lg:hidden" aria-label="Mobile">
           <div className="container-x flex flex-col py-3">
             {NAV.map((item) => (
               <Link key={item.to} to={item.to} className="nav-link py-3">
@@ -103,21 +107,14 @@ function Header() {
 }
 
 function ContactList() {
-  const { phone, email, whatsapp, address } = site.contact
-  const rows: { icon: LucideIcon; text: string; href?: string }[] = []
-  if (phone) rows.push({ icon: Phone, text: phone, href: `tel:${phone.replace(/\s+/g, '')}` })
-  if (whatsapp) rows.push({ icon: MessageCircle, text: 'WhatsApp us', href: `https://wa.me/${whatsapp.replace(/\D/g, '')}` })
-  if (email) rows.push({ icon: Mail, text: email, href: `mailto:${email}` })
-  if (address) rows.push({ icon: MapPin, text: address })
-
   return (
     <ul className="mt-4 space-y-3 text-sm">
       <li>
-        <Link to="/policy/contact" className="hover:text-brand-400">
+        <Link to="/contact" className="hover:text-brand-400">
           Contact us
         </Link>
       </li>
-      {rows.map(({ icon: Icon, text, href }) => (
+      {contactChannels().map(({ icon: Icon, text, href }) => (
         <li key={text} className="flex items-start gap-2">
           <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-400" aria-hidden />
           {href ? (
@@ -172,7 +169,8 @@ function Footer() {
         <FooterLinks
           title="Company"
           links={[
-            { label: 'About us', to: '/policy/about' },
+            { label: 'About us', to: '/about' },
+            { label: 'Gallery', to: '/gallery' },
             { label: 'Terms & Conditions', to: '/policy/terms' },
             { label: 'Privacy Policy', to: '/policy/privacy' },
             { label: 'Cancellation Policy', to: '/policy/cancellation' },

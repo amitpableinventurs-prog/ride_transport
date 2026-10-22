@@ -20,6 +20,24 @@ export const site = {
   /** Cities shown under "Where we operate"; keep in line with the service areas in the admin panel. */
   cities: ['Indore', 'Mumbai', 'Pune', 'Bengaluru', 'New Delhi'],
 
+  /** Registered company name, shown on the About and Contact pages. */
+  legalName: 'AnZ Cabs & Logistics Private Limited',
+
+  /**
+   * Gallery page images. Put the files in `public/gallery/` and list them here; any image format works
+   * (photos at about 1200×800 look best). `category` groups them under the filter buttons.
+   */
+  gallery: [
+    { src: '/gallery/bike-ride.svg', alt: 'A rider on a scooter in city traffic', caption: 'Bike rides through city traffic', category: 'Rides' },
+    { src: '/gallery/auto-ride.svg', alt: 'A green and yellow auto rickshaw on the road', caption: 'Autos for short city trips', category: 'Rides' },
+    { src: '/gallery/cab-economy.svg', alt: 'A blue AnZ cab on a city road', caption: 'Cab Economy for daily commutes', category: 'Rides' },
+    { src: '/gallery/cab-night.svg', alt: 'A black sedan driving through the city at night', caption: 'Cab Premium, day or night', category: 'Rides' },
+    { src: '/gallery/parcel-delivery.svg', alt: 'A bike porter carrying an AnZ parcel box', caption: 'Bike porters for parcels', category: 'Delivery' },
+    { src: '/gallery/goods-truck.svg', alt: 'An AnZ Logistics goods vehicle', caption: 'Goods vehicles for stock and shifting', category: 'Delivery' },
+    { src: '/gallery/app-booking.svg', alt: 'A phone showing a booked route on a map', caption: 'Book and track in the app', category: 'App & safety' },
+    { src: '/gallery/safety-otp.svg', alt: 'A shield with a tick above a four-digit OTP', caption: 'Every trip starts with your OTP', category: 'App & safety' },
+  ],
+
   /** Policy pages: CMS slug (admin panel → CMS) and the title used in links. */
   policies: [
     { slug: 'terms', title: 'Terms & Conditions' },

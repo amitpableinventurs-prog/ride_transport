@@ -142,7 +142,7 @@ export function DrivePage() {
             <p className="mt-3 max-w-xl text-white/60">Partner with AnZ Cabs as a transport partner and put your vehicles and drivers to work on delivery requests.</p>
           </div>
           <div className="flex flex-wrap gap-3 lg:justify-end">
-            <Link to="/policy/contact" className="btn-brand">
+            <Link to="/contact" className="btn-brand">
               Contact us <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
             <Link to="/policy/partner_terms" className="btn-ghost">

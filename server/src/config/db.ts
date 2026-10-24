@@ -16,7 +16,8 @@ export async function connectDb(): Promise<void> {
     socketTimeoutMS: 45000,
     maxIdleTimeMS: 60000,
   })
-  console.log(`[db] connected to ${env.mongoUri}`)
+  // Hide the password: Atlas URIs carry credentials.
+  console.log(`[db] connected to ${env.mongoUri.replace(/\/\/[^@/]*@/, '//***@')}`)
 
   // App users sign up with a phone number only, so email moved from a plain
   // unique index to a sparse one. syncIndexes swaps the old index on existing DBs.

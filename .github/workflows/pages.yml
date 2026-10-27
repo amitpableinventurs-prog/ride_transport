@@ -1,0 +1,78 @@
+# GitHub Pages preview of the AnZ Cabs UI, for showing clients.
+#
+# Push to main (or "Run workflow"): builds the website at https://<owner>.github.io/<repo>/
+# and the admin panel at https://<owner>.github.io/<repo>/admin/ and publishes them.
+# Static hosting only: no API runs here, so the admin sign-in and the website's CMS pages
+# cannot load data. The real deployment is Hostinger, see ci-cd.yml and docs/DEPLOYMENT.md.
+
+name: GitHub Pages
+
+on:
+  push:
+    # The feature branch deploys too until it is merged, so the client preview can go live now.
+    branches: [main, feature/customer-rider-apps]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 22
+  BASE: /${{ github.event.repository.name }}/
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+
+      - name: Website - build
+        working-directory: website
+        run: |
+          npm ci
+          npm run build -- --base="$BASE"
+
+      - name: Admin panel - build
+        run: |
+          npm ci
+          npm run build -- --base="${BASE}admin/"
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/admin
+          cp -r website/dist/. _site/
+          cp -r dist/. _site/admin/
+          rm -f _site/.htaccess _site/admin/.htaccess
+          # Pages serves 404.html for unknown paths, which lets the website's router handle deep links.
+          # Admin deep links go back to the admin panel's start page instead.
+          sed "s|<head>|<head><script>if (location.pathname.indexOf('${BASE}admin/') === 0) location.replace('${BASE}admin/')</script>|" \
+            website/dist/index.html > _site/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

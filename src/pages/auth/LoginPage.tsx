@@ -43,7 +43,7 @@ export function LoginPage() {
       <div className="relative w-full max-w-md">
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
           <img
-            src="/brand/anz-logo.png"
+            src={`${import.meta.env.BASE_URL}brand/anz-logo.png`}
             alt="AnZ Cabs & Logistics — Connecting People. Moving Possibilities."
             width={800}
             height={490}

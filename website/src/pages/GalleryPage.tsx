@@ -10,9 +10,9 @@ const ALL = 'All'
 const CATEGORIES = [ALL, ...new Set(site.gallery.map((p) => p.category))]
 
 const LOGOS = [
-  { src: '/brand/anz-logo.png', title: 'Full logo', note: 'For light backgrounds', width: 800, height: 490 },
-  { src: '/brand/anz-icon.png', title: 'App icon', note: 'Square mark', width: 512, height: 512 },
-  { src: '/brand/anz-og.png', title: 'Wide banner', note: 'For social posts and link previews', width: 1200, height: 630 },
+  { src: `${import.meta.env.BASE_URL}brand/anz-logo.png`, title: 'Full logo', note: 'For light backgrounds', width: 800, height: 490 },
+  { src: `${import.meta.env.BASE_URL}brand/anz-icon.png`, title: 'App icon', note: 'Square mark', width: 512, height: 512 },
+  { src: `${import.meta.env.BASE_URL}brand/anz-og.png`, title: 'Wide banner', note: 'For social posts and link previews', width: 1200, height: 630 },
 ]
 
 /** Full-screen view of one photo; arrow keys move between photos and Esc closes. */

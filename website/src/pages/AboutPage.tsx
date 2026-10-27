@@ -61,7 +61,7 @@ export function AboutPage() {
             </div>
           </div>
           <div className="rounded-3xl border border-ink-100 bg-white p-8 shadow-sm">
-            <img src="/brand/anz-logo.png" alt={`${site.legalName} logo`} width={800} height={490} className="h-auto w-full" />
+            <img src={`${import.meta.env.BASE_URL}brand/anz-logo.png`} alt={`${site.legalName} logo`} width={800} height={490} className="h-auto w-full" />
           </div>
         </div>
       </section>

@@ -97,6 +97,10 @@ OTPs are 6 digits, stored hashed, valid for **Settings → Security → OTP expi
 
 Swagger UI: **http://localhost:5000/api-docs** (raw spec at `/api-docs.json`), covering the admin, customer, rider, common and earlier `/app` APIs, plus the Socket.IO events. The spec lives in `server/src/docs/openapi.ts`; update it when you add or change a route.
 
+## Deployment (CI/CD)
+
+GitHub Actions (`.github/workflows/ci-cd.yml`) lints and builds the admin panel, API and website on every push, and deploys to Hostinger on pushes to `main` once `DEPLOY_ENABLED` is set. Setup steps, secrets and variables: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Project structure
 
 ```

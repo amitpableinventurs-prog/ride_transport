@@ -1,0 +1,180 @@
+# CI/CD for AnZ Cabs on Hostinger (Business / Cloud hosting).
+#
+# Every push and pull request: lint and build the admin panel, API and website.
+# Push to main (or "Run workflow"), once the repository variable DEPLOY_ENABLED is "true":
+#   - admin panel and website: built with the production API URL and copied to
+#     their public_html folders over SSH (rsync)
+#   - API: built and pushed to the deploy/api branch, which the Hostinger
+#     Node.js app is connected to and redeploys from
+# Setup, secrets and variables: docs/DEPLOYMENT.md
+
+name: CI/CD
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  checks:
+    name: Lint and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+            website/package-lock.json
+
+      - name: Admin panel - install
+        run: npm ci
+      - name: Admin panel - lint
+        run: npm run lint
+      - name: Admin panel - build
+        run: npm run build
+
+      - name: API - install
+        working-directory: server
+        run: npm ci
+      - name: API - build
+        working-directory: server
+        run: npm run build
+
+      - name: Website - install
+        working-directory: website
+        run: npm ci
+      - name: Website - build
+        working-directory: website
+        run: npm run build
+
+  deploy-frontends:
+    name: Deploy ${{ matrix.app }}
+    needs: checks
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ matrix.app }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: admin panel
+            dir: .
+            api_path: /api/v1/admin
+            remote_path_var: ADMIN_REMOTE_PATH
+          - app: website
+            dir: website
+            api_path: /api/v1
+            remote_path_var: WEBSITE_REMOTE_PATH
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ matrix.dir }}/package-lock.json
+
+      - name: Build with the production API URL
+        working-directory: ${{ matrix.dir }}
+        env:
+          VITE_API_BASE_URL: ${{ vars.API_PUBLIC_URL }}${{ matrix.api_path }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_BROWSER_KEY }}
+        run: |
+          test -n "${{ vars.API_PUBLIC_URL }}" || { echo "::error::Repository variable API_PUBLIC_URL is not set"; exit 1; }
+          npm ci
+          npm run build
+          test -f dist/.htaccess || { echo "::error::dist/.htaccess is missing"; exit 1; }
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+          SSH_HOST: ${{ vars.HOSTINGER_SSH_HOST }}
+          SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '65002' }}
+        run: |
+          test -n "$SSH_KEY" || { echo "::error::Secret HOSTINGER_SSH_KEY is not set"; exit 1; }
+          test -n "$SSH_HOST" || { echo "::error::Repository variable HOSTINGER_SSH_HOST is not set"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/hostinger && chmod 600 ~/.ssh/hostinger
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload to Hostinger
+        env:
+          SSH_HOST: ${{ vars.HOSTINGER_SSH_HOST }}
+          SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT || '65002' }}
+          SSH_USER: ${{ vars.HOSTINGER_SSH_USER }}
+          REMOTE_PATH: ${{ vars[matrix.remote_path_var] }}
+        run: |
+          test -n "$REMOTE_PATH" || { echo "::error::Repository variable ${{ matrix.remote_path_var }} is not set"; exit 1; }
+          # --delete removes files from older builds; .well-known holds the SSL certificate checks.
+          rsync -rlz --delete --exclude '.well-known/' \
+            -e "ssh -i ~/.ssh/hostinger -p $SSH_PORT" \
+            "${{ matrix.dir }}/dist/" "$SSH_USER@$SSH_HOST:$REMOTE_PATH/"
+
+  publish-api:
+    name: Publish API to deploy/api
+    needs: checks
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-api
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Build
+        working-directory: server
+        run: |
+          npm ci
+          npm run build
+
+      - name: Push the built API to the deploy/api branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          out="$RUNNER_TEMP/api"
+          mkdir -p "$out"
+          cp -r server/dist server/package.json server/package-lock.json "$out/"
+          # The code is already compiled here, so Hostinger only installs and starts it.
+          node -e '
+            const fs = require("fs")
+            const file = process.argv[1]
+            const pkg = JSON.parse(fs.readFileSync(file, "utf8"))
+            pkg.scripts = { build: "echo \"API is prebuilt by GitHub Actions\"", start: "node dist/server.js" }
+            fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n")
+          ' "$out/package.json"
+          cat > "$out/README.md" <<EOF
+          # AnZ Cabs API build
+
+          Generated by GitHub Actions from ${GITHUB_SHA}. Do not edit this branch;
+          change the code in server/ on main instead. See docs/DEPLOYMENT.md on main.
+          EOF
+          cd "$out"
+          git init -q -b deploy/api
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "Deploy API from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:deploy/api

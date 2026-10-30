@@ -8,6 +8,8 @@ export const PERMISSION_KEYS = [
   'roles.view',
   'roles.manage',
   'audit_logs.view',
+  'error_logs.view',
+  'error_logs.manage',
   'settings.view',
   'settings.manage',
   'bookings.view',

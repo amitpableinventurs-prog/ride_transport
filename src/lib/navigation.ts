@@ -33,6 +33,7 @@ import {
   FileText,
   Settings,
   ScrollText,
+  Bug,
   Radar,
   CreditCard,
   PiggyBank,
@@ -177,6 +178,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Service Areas', path: '/system/service-areas', icon: Map, permission: 'settings.view' },
       { label: 'Settings', path: '/system/settings', icon: Settings, permission: 'settings.view' },
       { label: 'Audit Logs', path: '/system/audit-logs', icon: ScrollText, permission: 'audit_logs.view' },
+      { label: 'Error Logs', path: '/system/error-logs', icon: Bug, permission: 'error_logs.view' },
     ],
   },
 ]

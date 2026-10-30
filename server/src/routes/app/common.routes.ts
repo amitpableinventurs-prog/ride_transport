@@ -1,12 +1,16 @@
 import { Router } from 'express'
 import * as common from '../../controllers/common/common.controller'
-import { requireAppAuth } from '../../middleware/appAuth'
+import * as errorLogs from '../../controllers/errorLogs.controller'
+import { optionalAppAuth, requireAppAuth } from '../../middleware/appAuth'
+import { errorReportLimiter } from '../../middleware/rateLimits'
 
 // SRS §10.5 common APIs, mounted at /api/v1/common.
 export const commonRouter = Router()
 commonRouter.get('/app-config', common.getAppConfig)
 commonRouter.get('/cms/:slug', common.getCmsPage)
 commonRouter.post('/devices', requireAppAuth, common.registerDevice)
+// Crash and error reports from the apps (admin panel: System → Error Logs). Login is optional.
+commonRouter.post('/error-logs', errorReportLimiter, optionalAppAuth, errorLogs.reportAppError)
 
 // Pages opened from shared links without logging in, mounted at /api/v1/public.
 export const publicRouter = Router()

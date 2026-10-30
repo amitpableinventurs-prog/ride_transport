@@ -19,6 +19,11 @@ export async function connectDb(): Promise<void> {
   // Hide the password: Atlas URIs carry credentials.
   console.log(`[db] connected to ${env.mongoUri.replace(/\/\/[^@/]*@/, '//***@')}`)
 
+  // Super Admin has full access, so it also gets permissions added after the database was seeded (e.g. error_logs.*).
+  const { Role } = await import('../models/Role')
+  const { ALL_PERMISSIONS } = await import('../utils/roles')
+  await Role.updateOne({ key: 'super_admin' }, { $addToSet: { permissions: { $each: ALL_PERMISSIONS } } })
+
   // App users sign up with a phone number only, so email moved from a plain
   // unique index to a sparse one. syncIndexes swaps the old index on existing DBs.
   const { Customer } = await import('../models/Customer')

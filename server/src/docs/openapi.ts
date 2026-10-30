@@ -3,6 +3,7 @@
 import { env } from '../config/env'
 import { PERMISSION_KEYS, ROLE_KEYS } from '../types/rbac'
 import { GENDERS } from '../models/personalProfile'
+import { APP_ERROR_SOURCES, ERROR_LEVELS, ERROR_LOG_RETENTION_DAYS, ERROR_PLATFORMS, ERROR_SOURCES } from '../models/ErrorLog'
 
 type Schema = Record<string, unknown>
 
@@ -1648,6 +1649,35 @@ const commonPaths = {
       errors: [400],
     }),
   },
+  '/common/error-logs': {
+    post: op('Common', 'Report an app crash or error', {
+      auth: false,
+      description: [
+        'Shown in the admin panel under System → Error Logs. Login is optional: send the app token when signed in so the log shows who it happened to; without one the report is still saved.',
+        'Send uncaught Flutter errors with `level` `fatal`, caught failures (API calls, payments, maps) with `error` or `warning`. Long texts are cut, not rejected. `occurredAt` is when it happened on the device (queued reports can be sent later); a missing or future time becomes the time received.',
+        'At most 60 reports per 15 minutes per IP address (`429` after that).',
+      ].join('\n\n'),
+      body: obj(
+        {
+          source: enumOf(APP_ERROR_SOURCES),
+          level: enumOf(ERROR_LEVELS, { default: 'error' }),
+          message: str({ maxLength: 1000, example: 'Null check operator used on a null value' }),
+          stack: str({ maxLength: 8000 }),
+          screen: str({ maxLength: 200, example: 'BookingScreen' }),
+          platform: enumOf(['android', 'ios', 'web']),
+          appVersion: str({ example: '1.4.2+18' }),
+          osVersion: str({ example: 'Android 14' }),
+          deviceModel: str({ example: 'Samsung SM-A155F' }),
+          occurredAt: date(),
+          context: { type: 'object', additionalProperties: true, description: 'Up to 20 key/value pairs, e.g. bookingId, network' },
+        },
+        ['source', 'message'],
+      ),
+      response: obj({ id: oid() }),
+      status: 201,
+      errors: [400, 429],
+    }),
+  },
   '/public/track/{token}': {
     get: op('Public', 'Public tracking page data (share link)', {
       auth: false,
@@ -1721,7 +1751,7 @@ export const openApiSpec = {
   tags: [
     { name: 'Customer', description: 'SRS §10.2: customer app' },
     { name: 'Rider', description: 'SRS §10.3: rider app' },
-    { name: 'Common', description: 'SRS §10.5: app config, CMS, push devices' },
+    { name: 'Common', description: 'SRS §10.5: app config, CMS, push devices, error reports' },
     { name: 'Public', description: 'Pages opened from shared links, no login' },
     { name: 'App Auth', description: 'Phone + OTP login for the customer, rider/driver and partner apps' },
     { name: 'App Profile', description: 'The app Profile screen: name, email, gender, date of birth, emergency contact' },
@@ -1730,6 +1760,7 @@ export const openApiSpec = {
     { name: 'Admins' },
     { name: 'Roles' },
     { name: 'Audit Logs' },
+    { name: 'Error Logs', description: `App crashes and API errors, kept ${ERROR_LOG_RETENTION_DAYS} days` },
     { name: 'Settings' },
     { name: 'Customers' },
     { name: 'Drivers' },
@@ -1967,6 +1998,30 @@ export const openApiSpec = {
         targetLabel: str(),
         metadata: anyObj,
       }),
+      ErrorLog: entity(
+        {
+          source: enumOf(ERROR_SOURCES),
+          level: enumOf(ERROR_LEVELS),
+          message: str(),
+          stack: str({ description: 'Only in GET /error-logs/{id}' }),
+          screen: str({ description: 'App screen, or "METHOD /path" for API errors' }),
+          platform: enumOf(ERROR_PLATFORMS),
+          appVersion: str(),
+          osVersion: str(),
+          deviceModel: str(),
+          userType: enumOf(['customer', 'driver', 'partner', 'admin']),
+          userId: nullable(oid()),
+          userName: str(),
+          userPhone: str(),
+          context: { ...anyObj, description: 'Only in GET /error-logs/{id}' },
+          ip: str(),
+          occurredAt: date({ description: 'When it happened on the device' }),
+          status: enumOf(['open', 'resolved']),
+          resolvedAt: date(),
+          resolvedBy: str({ description: 'Admin name' }),
+        },
+        'id',
+      ),
 
       // Settings
       Settings: obj({
@@ -2604,6 +2659,55 @@ export const openApiSpec = {
     },
     '/audit-logs': {
       get: op('Audit Logs', 'Latest 500 audit log entries', { permission: 'audit_logs.view', response: listOf('AuditLog') }),
+    },
+
+    // ---------------- Error Logs ----------------
+    '/error-logs': {
+      get: op('Error Logs', 'App crashes and API errors, newest first', {
+        permission: 'error_logs.view',
+        description: 'Without `stack` and `context` (see GET /error-logs/{id}). Up to 100 per page.',
+        parameters: [
+          ...pageParams,
+          query('source', 'Where it came from', enumOf(ERROR_SOURCES)),
+          query('level', 'Severity', enumOf(ERROR_LEVELS)),
+          query('status', 'Open or resolved', enumOf(['open', 'resolved'])),
+          query('platform', 'Device platform', enumOf(ERROR_PLATFORMS)),
+          query('from', 'Happened on or after (ISO date)', str({ format: 'date' })),
+          query('to', 'Happened on or before; a date-only value includes the whole day', str({ format: 'date' })),
+          qParam('message, screen, user name/phone, app version and device model'),
+        ],
+        response: paginated('ErrorLog'),
+        errors: [400],
+      }),
+    },
+    '/error-logs/summary': {
+      get: op('Error Logs', 'Counts for the Error Logs page header', {
+        permission: 'error_logs.view',
+        response: obj({
+          open: int(),
+          openFatal: int(),
+          last24h: int({ description: 'Errors that happened in the last 24 hours, open or resolved' }),
+          openBySource: obj(Object.fromEntries(ERROR_SOURCES.map((s) => [s, int()]))),
+        }),
+      }),
+    },
+    '/error-logs/{id}': {
+      get: op('Error Logs', 'One error with its stack trace and context', { permission: 'error_logs.view', parameters: [idParam], response: ref('ErrorLog'), errors: [404] }),
+      patch: op('Error Logs', 'Mark resolved or reopen', {
+        permission: 'error_logs.manage',
+        parameters: [idParam],
+        body: obj({ status: enumOf(['open', 'resolved']) }, ['status']),
+        response: ref('ErrorLog'),
+        errors: [400, 404],
+      }),
+    },
+    '/error-logs/{id}/resolve-similar': {
+      post: op('Error Logs', 'Resolve every open log with the same source and message', {
+        permission: 'error_logs.manage',
+        parameters: [idParam],
+        response: obj({ resolved: int({ description: 'How many logs were marked resolved' }) }),
+        errors: [404],
+      }),
     },
 
     // ---------------- Settings ----------------

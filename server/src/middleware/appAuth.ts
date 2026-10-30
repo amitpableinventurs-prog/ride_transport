@@ -2,25 +2,38 @@ import type { NextFunction, Request, Response } from 'express'
 import { getPlatformSettings } from '../utils/settings'
 import { verifyAppAccessToken, type AppUserType } from '../utils/jwt'
 import { isSessionRevoked } from '../utils/sessions'
-import { findAppUserById, isAppUserActive } from '../utils/appUsers'
+import { findAppUserById, isAppUserActive, type AppUser } from '../utils/appUsers'
 
-export async function requireAppAuth(req: Request, res: Response, next: NextFunction) {
+/** The active app user and session of the request's Bearer token, or null. */
+async function appSessionFromRequest(req: Request): Promise<{ user: AppUser; sessionId: string } | null> {
   const header = req.headers.authorization ?? ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : null
   const payload = token ? verifyAppAccessToken(token) : null
-  if (!payload || (await isSessionRevoked(payload.fid))) {
-    res.status(401).json({ message: 'Unauthorized' })
-    return
-  }
+  if (!payload || (await isSessionRevoked(payload.fid))) return null
 
   const user = await findAppUserById(payload.ut, payload.sub)
-  if (!user || !isAppUserActive(user)) {
+  return user && isAppUserActive(user) ? { user, sessionId: payload.fid } : null
+}
+
+export async function requireAppAuth(req: Request, res: Response, next: NextFunction) {
+  const session = await appSessionFromRequest(req)
+  if (!session) {
     res.status(401).json({ message: 'Unauthorized' })
     return
   }
 
-  req.appUser = user
-  req.appSessionId = payload.fid
+  req.appUser = session.user
+  req.appSessionId = session.sessionId
+  next()
+}
+
+/** Like requireAppAuth, but without a valid token the request goes on with no req.appUser. */
+export async function optionalAppAuth(req: Request, _res: Response, next: NextFunction) {
+  const session = await appSessionFromRequest(req)
+  if (session) {
+    req.appUser = session.user
+    req.appSessionId = session.sessionId
+  }
   next()
 }
 

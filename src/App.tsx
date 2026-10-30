@@ -44,6 +44,7 @@ import { CmsPagesPage } from '@/pages/system/CmsPagesPage'
 import { ServiceAreasPage } from '@/pages/system/ServiceAreasPage'
 import { SettingsPage } from '@/pages/system/SettingsPage'
 import { AuditLogsPage } from '@/pages/system/AuditLogsPage'
+import { ErrorLogsPage } from '@/pages/system/ErrorLogsPage'
 import { ForbiddenPage } from '@/pages/misc/ForbiddenPage'
 import { NotFoundPage } from '@/pages/misc/NotFoundPage'
 import { AdminLayout } from '@/components/layout/AdminLayout'
@@ -94,6 +95,7 @@ const PAGES: Record<string, ComponentType> = {
   '/system/service-areas': ServiceAreasPage,
   '/system/settings': SettingsPage,
   '/system/audit-logs': AuditLogsPage,
+  '/system/error-logs': ErrorLogsPage,
 }
 
 function App() {

@@ -4,6 +4,7 @@ import dashboardRoutes from './dashboard.routes'
 import adminsRoutes from './admins.routes'
 import rolesRoutes from './roles.routes'
 import auditLogsRoutes from './auditLogs.routes'
+import errorLogsRoutes from './errorLogs.routes'
 import settingsRoutes from './settings.routes'
 import customersRoutes from './customers.routes'
 import driversRoutes from './drivers.routes'
@@ -37,6 +38,7 @@ router.use('/dashboard', dashboardRoutes)
 router.use('/admins', adminsRoutes)
 router.use('/roles', rolesRoutes)
 router.use('/audit-logs', auditLogsRoutes)
+router.use('/error-logs', errorLogsRoutes)
 router.use('/settings', settingsRoutes)
 router.use('/users/customers', customersRoutes)
 router.use('/users/drivers', driversRoutes)

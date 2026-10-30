@@ -12,6 +12,8 @@ export type PermissionKey =
   | 'roles.view'
   | 'roles.manage'
   | 'audit_logs.view'
+  | 'error_logs.view'
+  | 'error_logs.manage'
   | 'settings.view'
   | 'settings.manage'
   | 'bookings.view'
@@ -63,6 +65,8 @@ export const PERMISSION_GROUPS: { label: string; permissions: { key: PermissionK
       { key: 'roles.view', label: 'View roles & permissions' },
       { key: 'roles.manage', label: 'Edit roles & permissions' },
       { key: 'audit_logs.view', label: 'View audit logs' },
+      { key: 'error_logs.view', label: 'View app & API error logs' },
+      { key: 'error_logs.manage', label: 'Resolve error logs' },
       { key: 'settings.view', label: 'View system settings' },
       { key: 'settings.manage', label: 'Edit system settings' },
     ],

@@ -6,6 +6,7 @@ import { env } from './config/env'
 import { initRealtime } from './realtime/socket'
 import { startDispatchSweeper } from './services/dispatch'
 import { startGatewayReconciler } from './services/gatewayPayments'
+import { recordServerError } from './utils/errorLogs'
 
 const SHUTDOWN_GRACE_MS = 10_000
 
@@ -55,6 +56,7 @@ async function main() {
   // A failed background promise must never take the whole API down: log it and keep serving.
   process.on('unhandledRejection', (reason) => {
     console.error('[process] unhandled rejection', reason)
+    void recordServerError(reason)
   })
   // After an uncaught exception the process state is unknown. Log it, finish what is running and exit;
   // a process manager (PM2, systemd, Docker) then starts a fresh one.

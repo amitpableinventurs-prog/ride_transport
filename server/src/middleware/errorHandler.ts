@@ -3,12 +3,13 @@ import mongoose from 'mongoose'
 import multer from 'multer'
 import { env } from '../config/env'
 import { HttpError } from '../utils/http'
+import { recordServerError } from '../utils/errorLogs'
 
 export function notFoundHandler(req: Request, res: Response) {
   res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` })
 }
 
-export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof HttpError) {
     res.status(err.status).json({ message: err.message, ...err.details })
     return
@@ -41,6 +42,7 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   }
 
   console.error(err)
+  void recordServerError(err, req)
   const message = !env.isProduction && err instanceof Error ? err.message : 'Internal server error'
   res.status(500).json({ message })
 }

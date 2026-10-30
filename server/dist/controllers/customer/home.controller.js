@@ -1,0 +1,199 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHome = getHome;
+exports.listRecentPlaces = listRecentPlaces;
+exports.searchPlaces = searchPlaces;
+exports.reverseGeocode = reverseGeocode;
+exports.getReferral = getReferral;
+exports.applyReferral = applyReferral;
+exports.getAllServices = getAllServices;
+const Booking_1 = require("../../models/Booking");
+const Customer_1 = require("../../models/Customer");
+const ServiceCategory_1 = require("../../models/ServiceCategory");
+const account_controller_1 = require("./account.controller");
+const geo_1 = require("../../utils/geo");
+const http_1 = require("../../utils/http");
+const maps_1 = require("../../utils/maps");
+const referral_1 = require("../../utils/referral");
+const settings_1 = require("../../utils/settings");
+const customerDoc = (req) => req.appUser.doc;
+const RECENT_LIMIT = 6;
+const SAME_PLACE_KM = 0.05;
+const REVERSE_MATCH_KM = 0.2;
+const SEARCH_LIMIT = 10;
+// Shorter queries match only the customer's own places, so typing doesn't hit Google on every key.
+const MAPS_SEARCH_MIN_CHARS = 3;
+function favouriteFor(customer, point, address) {
+    const norm = address.trim().toLowerCase();
+    return customer.savedPlaces.find((p) => p.address.trim().toLowerCase() === norm || (0, geo_1.haversineKm)(point, p) <= SAME_PLACE_KM) ?? null;
+}
+/** Latest distinct drop-off places from the customer's past bookings, newest first. */
+async function recentPlaces(customer, limit) {
+    const bookings = await Booking_1.Booking.find({ customer: customer._id, status: { $ne: 'cancelled' }, 'drop.address': { $exists: true, $ne: null } })
+        .sort({ createdAt: -1 })
+        .limit(limit * 6)
+        .select('drop');
+    const out = [];
+    for (const b of bookings) {
+        const { address, lat, lng } = b.drop ?? {};
+        if (!address || lat == null || lng == null)
+            continue;
+        const point = { lat, lng };
+        if (out.some((p) => p.address.toLowerCase() === address.toLowerCase() || (0, geo_1.haversineKm)(p, point) <= SAME_PLACE_KM))
+            continue;
+        out.push({ name: address.split(',')[0].trim(), address, ...point, favouriteId: favouriteFor(customer, point, address)?.id ?? null });
+        if (out.length === limit)
+            break;
+    }
+    return out;
+}
+// GET /home?lat=&lng=: everything the Home tab needs in one call. lat/lng are optional.
+async function getHome(req, res) {
+    const customer = customerDoc(req);
+    const point = (0, geo_1.parseLatLng)(req.query.lat, req.query.lng);
+    const [area, active, recent, settings] = await Promise.all([
+        point ? (0, geo_1.findServiceArea)(point) : null,
+        Booking_1.Booking.findOne({ customer: customer._id, status: { $in: Booking_1.OPEN_BOOKING_STATUSES } }).sort({ createdAt: -1 }).select('bookingCode status mode categoryKey drop'),
+        recentPlaces(customer, RECENT_LIMIT),
+        (0, settings_1.getPlatformSettings)(),
+    ]);
+    const name = customer.name?.trim() ?? '';
+    res.json({
+        name,
+        firstName: name.split(/\s+/)[0] ?? '',
+        initial: name ? name[0].toUpperCase() : '',
+        serviceable: point ? Boolean(area) : null,
+        city: area?.city ?? customer.city ?? null,
+        modes: { ride: settings.rideServiceEnabled && (area?.rideEnabled ?? true), transport: settings.transportServiceEnabled && (area?.transportEnabled ?? true) },
+        activeBooking: active ? { id: active.id, bookingCode: active.bookingCode, status: active.status, mode: active.mode, categoryKey: active.categoryKey, drop: active.drop } : null,
+        savedPlaces: customer.savedPlaces,
+        recentPlaces: recent,
+    });
+}
+// GET /recent-places?limit=
+async function listRecentPlaces(req, res) {
+    const limit = Math.min(Math.max(Number(req.query.limit) || RECENT_LIMIT, 1), 20);
+    res.json(await recentPlaces(customerDoc(req), limit));
+}
+// GET /places/search?q=&lat=&lng=: the customer's saved and recent places that match first, then Google Places results.
+async function searchPlaces(req, res) {
+    const query = (0, http_1.requireString)(req.query.q, 'q', 100);
+    const q = query.toLowerCase();
+    const customer = customerDoc(req);
+    const origin = (0, geo_1.parseLatLng)(req.query.lat, req.query.lng);
+    const saved = customer.savedPlaces.map((p) => ({ name: p.name || p.label[0].toUpperCase() + p.label.slice(1), address: p.address, lat: p.lat, lng: p.lng, favouriteId: p.id }));
+    const [recent, found] = await Promise.all([recentPlaces(customer, 20), q.length >= MAPS_SEARCH_MIN_CHARS ? (0, maps_1.searchPlacesText)(query, origin) : []]);
+    const fromMaps = found.map((p) => ({ name: p.name, address: p.address, lat: p.lat, lng: p.lng, favouriteId: favouriteFor(customer, p, p.address)?.id ?? null }));
+    const seen = new Set();
+    const results = [...[...saved, ...recent].filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q)), ...fromMaps]
+        .filter((p) => !seen.has(p.address.toLowerCase()) && seen.add(p.address.toLowerCase()))
+        .map((p) => ({ ...p, distanceKm: origin ? Math.round((0, geo_1.haversineKm)(origin, p) * 10) / 10 : null }));
+    res.json(results.slice(0, SEARCH_LIMIT));
+}
+// GET /places/reverse?lat=&lng=: the address label under the "Pickup Point" pin. The customer's own place when the pin
+// is on it, else Google's street address, else a known place within 200 m; `city` is the service area's.
+async function reverseGeocode(req, res) {
+    const point = (0, geo_1.parseLatLng)(req.query.lat, req.query.lng);
+    if (!point)
+        throw new http_1.HttpError(400, 'lat and lng query parameters are required');
+    const customer = customerDoc(req);
+    const [area, recent, street] = await Promise.all([(0, geo_1.findServiceArea)(point), recentPlaces(customer, 20), (0, maps_1.reverseGeocodeAddress)(point)]);
+    const known = [...customer.savedPlaces.map((p) => ({ address: p.address, lat: p.lat, lng: p.lng })), ...recent]
+        .map((p) => ({ p, d: (0, geo_1.haversineKm)(point, p) }))
+        .filter((x) => x.d <= REVERSE_MATCH_KM)
+        .sort((a, b) => a.d - b.d)[0];
+    const onKnownPlace = known && known.d <= SAME_PLACE_KM;
+    const address = (onKnownPlace ? known.p.address : street) ?? known?.p.address ?? null;
+    res.json({ ...point, address, city: area?.city ?? null, serviceable: Boolean(area) });
+}
+// ---------- Refer & Earn ----------
+// GET /referral
+async function getReferral(req, res) {
+    const customer = customerDoc(req);
+    const [code, settings, referred] = await Promise.all([
+        (0, referral_1.ensureReferralCode)(customer._id),
+        (0, settings_1.getPlatformSettings)(),
+        Customer_1.Customer.find({ referredBy: customer._id }).sort({ createdAt: -1 }).limit(50).select('name createdAt referralRewardedAt'),
+    ]);
+    const rewarded = referred.filter((r) => r.referralRewardedAt);
+    const amount = settings.referralRewardReferrer;
+    res.json({
+        enabled: settings.referralEnabled,
+        code,
+        title: `Invite friends to ${settings.platformName}`,
+        description: 'When a friend completes their first ride, you both get ride credit.',
+        shareMessage: `Join ${settings.platformName} and get ₹${settings.referralRewardReferee} ride credit on your first ride. Use my code ${code} when you sign up.`,
+        rewardForYou: amount,
+        rewardForFriend: settings.referralRewardReferee,
+        currency: settings.defaultCurrency,
+        steps: [
+            { step: 1, title: 'Share your code', description: `Send it to friends who are new to ${settings.platformName}.` },
+            { step: 2, title: 'They take a ride', description: 'Your friend signs up and completes a trip.' },
+            { step: 3, title: 'You earn credit', description: 'Ride credit is added for both of you.' },
+        ],
+        stats: { invited: referred.length, rewarded: rewarded.length, totalEarned: rewarded.length * amount },
+        referrals: referred.map((r) => ({ name: r.name || 'New user', joinedAt: r.createdAt, status: r.referralRewardedAt ? 'rewarded' : 'pending' })),
+        appliedCode: Boolean(customer.referredBy),
+    });
+}
+// POST /referral/apply { code }: a new customer enters a friend's code before their first ride.
+async function applyReferral(req, res) {
+    const customer = customerDoc(req);
+    const settings = await (0, settings_1.getPlatformSettings)();
+    if (!settings.referralEnabled)
+        throw new http_1.HttpError(422, 'Referrals are not available right now');
+    const code = (0, http_1.requireString)((req.body ?? {}).code, 'code', 20).toUpperCase();
+    if (customer.referredBy)
+        throw new http_1.HttpError(409, 'You have already used a referral code');
+    if (customer.totalBookings > 0)
+        throw new http_1.HttpError(422, 'Referral codes can only be applied before your first ride');
+    const owner = await Customer_1.Customer.findOne({ referralCode: code }).select('_id');
+    if (!owner)
+        throw new http_1.HttpError(404, 'This referral code is not valid');
+    if (owner.id === customer.id)
+        throw new http_1.HttpError(400, 'You cannot use your own referral code');
+    const claimed = await Customer_1.Customer.updateOne({ _id: customer._id, referredBy: null }, { $set: { referredBy: owner._id } });
+    if (!claimed.modifiedCount)
+        throw new http_1.HttpError(409, 'You have already used a referral code');
+    res.json({ message: `Code applied. You will get ₹${settings.referralRewardReferee} ride credit after your first ride.`, rewardForYou: settings.referralRewardReferee });
+}
+// ---------- All Services (Service tab) ----------
+const SERVICE_SECTIONS = [
+    { mode: 'ride', title: 'Ride', subtitle: 'City trips for people. Pick an auto, bike or cab.' },
+    { mode: 'transport', title: 'Transport', subtitle: 'Send goods across the city, from a bike parcel to a large truck.' },
+];
+// GET /all-services?lat=&lng=: the whole "All Services" screen in one call. lat/lng are optional: without them every
+// active category is listed with no rider counts; with them each item also says whether it can be booked there.
+async function getAllServices(req, res) {
+    const point = (0, geo_1.parseLatLng)(req.query.lat, req.query.lng);
+    const [settings, categories, area] = await Promise.all([
+        (0, settings_1.getPlatformSettings)(),
+        ServiceCategory_1.ServiceCategory.find({ status: 'active' }).sort({ sortOrder: 1 }),
+        point ? (0, geo_1.findServiceArea)(point) : null,
+    ]);
+    const modeOn = { ride: settings.rideServiceEnabled && (!point || Boolean(area?.rideEnabled)), transport: settings.transportServiceEnabled && (!point || Boolean(area?.transportEnabled)) };
+    const availability = point && area ? await (0, account_controller_1.nearbyAvailability)(point, settings.dispatchRadiusKm, categories.map((c) => c.key)) : null;
+    res.json({
+        serviceable: point ? Boolean(area) : null,
+        serviceArea: area ? { id: area.id, name: area.name, city: area.city } : null,
+        message: point && !area ? "We don't operate at this location yet" : null,
+        sections: SERVICE_SECTIONS.map((section) => ({
+            ...section,
+            enabled: modeOn[section.mode],
+            items: categories
+                .filter((c) => c.mode === section.mode)
+                .map((c) => ({
+                key: c.key,
+                name: c.name,
+                description: c.description ?? null,
+                icon: c.icon,
+                seats: c.seats ?? null,
+                capacityLabel: c.capacityLabel ?? null,
+                available: modeOn[section.mode],
+                ridersNearby: availability?.get(c.key)?.ridersNearby ?? null,
+                etaMin: availability?.get(c.key)?.etaMin ?? null,
+            })),
+        })),
+    });
+}
+//# sourceMappingURL=home.controller.js.map

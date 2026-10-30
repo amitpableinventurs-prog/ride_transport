@@ -1,5 +1,5 @@
 node_modules/
-dist/
+# dist/ is committed: the Hostinger Node.js app runs dist/server.js straight from the repo.
 .env
 *.log
 uploads/

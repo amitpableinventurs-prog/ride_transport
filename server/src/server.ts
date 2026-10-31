@@ -11,7 +11,6 @@ import { recordServerError } from './utils/errorLogs'
 const SHUTDOWN_GRACE_MS = 10_000
 
 async function main() {
-  await connectDb()
   const server = http.createServer(app)
 
   // Connection limits so slow or abusive clients cannot hold sockets open forever.
@@ -21,13 +20,13 @@ async function main() {
   server.maxRequestsPerSocket = 1000
 
   const io = initRealtime(server)
-  startDispatchSweeper()
-  startGatewayReconciler()
   server.on('error', (err: NodeJS.ErrnoException) => {
     console.error(err.code === 'EADDRINUSE' ? `[server] port ${env.port} is already in use: stop the other server first` : '[server] error', err.code === 'EADDRINUSE' ? '' : err)
     process.exit(1)
   })
-  server.listen(env.port, () => {
+  // Listen before connecting to MongoDB: Hostinger shows a 503 while the app is not listening, so a database
+  // problem would otherwise hide behind it. /health/ready reports the database state instead.
+  server.listen(env.port, '0.0.0.0', () => {
     console.log(`[server] listening on http://localhost:${env.port} (Socket.IO: /customer, /rider, /admin)`)
   })
 
@@ -64,6 +63,16 @@ async function main() {
     console.error('[process] uncaught exception', err)
     shutdown('uncaughtException', 1)
   })
+
+  try {
+    await connectDb()
+  } catch (err) {
+    console.error('[db] connection failed: the API keeps running, but requests that need the database will fail', err)
+    return
+  }
+  // The sweepers read the database every few seconds, so they only start once it is reachable.
+  startDispatchSweeper()
+  startGatewayReconciler()
 }
 
 main().catch((err) => {

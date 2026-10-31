@@ -1,176 +1,81 @@
-
 "use strict";
-
-const http = require("http");
-const mongoose = require("mongoose");
-
-const { app } = require("./app");
-const { connectDb } = require("./config/db");
-const { env } = require("./config/env");
-const { initRealtime } = require("./realtime/socket");
-const { startDispatchSweeper } = require("./services/dispatch");
-const { startGatewayReconciler } = require("./services/gatewayPayments");
-const { recordServerError } = require("./utils/errorLogs");
-
-// Hostinger PORT configuration
-const PORT = Number(process.env.PORT || env.port || 5050);
-const HOST = "0.0.0.0";
-
-const SHUTDOWN_GRACE_MS = 10000;
-
-let shuttingDown = false;
-let backgroundServicesStarted = false;
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-    const dbConnected = mongoose.connection.readyState === 1;
-
-    res.status(200).json({
-        success: true,
-        message: "Ride Transport API is running",
-        server: "online",
-        database: dbConnected ? "connected" : "disconnected",
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Create HTTP server
-const server = http.createServer(app);
-
-// Server timeout configuration
-server.keepAliveTimeout = 65000;
-server.headersTimeout = 66000;
-server.requestTimeout = 60000;
-
-// Socket.IO
-let io;
-
-async function startBackgroundServices() {
-    if (backgroundServicesStarted) return;
-
-    backgroundServicesStarted = true;
-
-    try {
-        io = initRealtime(server);
-
-        startDispatchSweeper();
-        startGatewayReconciler();
-
-        console.log("[server] Socket.IO initialized");
-        console.log("[server] Background services started");
-
-    } catch (error) {
-        backgroundServicesStarted = false;
-        console.error("[server] Background service error:", error);
-
-        try {
-            await recordServerError(error);
-        } catch (logError) {
-            console.error("[server] Error logging failed:", logError);
-        }
-    }
-}
-
-// Graceful shutdown
-function shutdown(reason, exitCode = 0) {
-    if (shuttingDown) return;
-
-    shuttingDown = true;
-
-    console.log(`[server] shutting down: ${reason}`);
-
-    const force = setTimeout(() => {
-        console.error("[server] shutdown timeout");
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const http_1 = __importDefault(require("http"));
+const mongoose_1 = __importDefault(require("mongoose"));
+const app_1 = require("./app");
+const db_1 = require("./config/db");
+const env_1 = require("./config/env");
+const socket_1 = require("./realtime/socket");
+const dispatch_1 = require("./services/dispatch");
+const gatewayPayments_1 = require("./services/gatewayPayments");
+const errorLogs_1 = require("./utils/errorLogs");
+const SHUTDOWN_GRACE_MS = 10_000;
+async function main() {
+    const server = http_1.default.createServer(app_1.app);
+    // Connection limits so slow or abusive clients cannot hold sockets open forever.
+    server.keepAliveTimeout = 65_000; // longer than common load balancer idle timeouts (60 s)
+    server.headersTimeout = 66_000;
+    server.requestTimeout = 60_000;
+    server.maxRequestsPerSocket = 1000;
+    const io = (0, socket_1.initRealtime)(server);
+    server.on('error', (err) => {
+        console.error(err.code === 'EADDRINUSE' ? `[server] port ${env_1.env.port} is already in use: stop the other server first` : '[server] error', err.code === 'EADDRINUSE' ? '' : err);
         process.exit(1);
-    }, SHUTDOWN_GRACE_MS);
-
-    force.unref();
-
-    if (io) {
-        try {
-            io.close();
-        } catch (error) {
-            console.error("[server] Socket shutdown error:", error);
-        }
-    }
-
-    server.close(async () => {
-        try {
-            await mongoose.connection.close();
-        } catch (error) {
-            console.error("[server] DB shutdown error:", error);
-        }
-
-        clearTimeout(force);
-        process.exit(exitCode);
     });
-
-    if (typeof server.closeIdleConnections === "function") {
+    // Listen before connecting to MongoDB: Hostinger shows a 503 while the app is not listening, so a database
+    // problem would otherwise hide behind it. /health/ready reports the database state instead.
+    server.listen(env_1.env.port, '0.0.0.0', () => {
+        console.log(`[server] listening on http://localhost:${env_1.env.port} (Socket.IO: /customer, /rider, /admin)`);
+    });
+    // Graceful shutdown (deploy / restart): stop taking new connections, let running requests finish, then close the DB.
+    let shuttingDown = false;
+    const shutdown = (reason, exitCode = 0) => {
+        if (shuttingDown)
+            return;
+        shuttingDown = true;
+        console.log(`[server] shutting down (${reason})`);
+        const force = setTimeout(() => {
+            console.error('[server] shutdown timed out, exiting');
+            process.exit(exitCode || 1);
+        }, SHUTDOWN_GRACE_MS);
+        force.unref();
+        // Close idle keep-alive connections now (they would keep the port busy) and the rest after a short wait.
+        server.close(() => {
+            void mongoose_1.default.connection.close().finally(() => process.exit(exitCode));
+        });
         server.closeIdleConnections();
+        setTimeout(() => server.closeAllConnections(), 3000).unref();
+        void io.close();
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    // A failed background promise must never take the whole API down: log it and keep serving.
+    process.on('unhandledRejection', (reason) => {
+        console.error('[process] unhandled rejection', reason);
+        void (0, errorLogs_1.recordServerError)(reason);
+    });
+    // After an uncaught exception the process state is unknown. Log it, finish what is running and exit;
+    // a process manager (PM2, systemd, Docker) then starts a fresh one.
+    process.on('uncaughtException', (err) => {
+        console.error('[process] uncaught exception', err);
+        shutdown('uncaughtException', 1);
+    });
+    try {
+        await (0, db_1.connectDb)();
     }
-
-    setTimeout(() => {
-        if (typeof server.closeAllConnections === "function") {
-            server.closeAllConnections();
-        }
-    }, 3000).unref();
+    catch (err) {
+        console.error('[db] connection failed: the API keeps running, but requests that need the database will fail', err);
+        return;
+    }
+    // The sweepers read the database every few seconds, so they only start once it is reachable.
+    (0, dispatch_1.startDispatchSweeper)();
+    (0, gatewayPayments_1.startGatewayReconciler)();
 }
-
-// Start server FIRST, then connect MongoDB
-server.on("error", (error) => {
-    console.error("[server] HTTP server error:", error);
-
-    if (error.code === "EADDRINUSE") {
-        console.error(`[server] Port ${PORT} is already in use`);
-    }
-
-    shutdown("server error", 1);
+main().catch((err) => {
+    console.error('[server] failed to start', err);
+    process.exit(1);
 });
-
-server.listen(PORT, HOST, async () => {
-    console.log(`[server] API running on ${HOST}:${PORT}`);
-    console.log(`[server] Health: /health`);
-
-    // MongoDB connection after HTTP server starts
-    try {
-        await connectDb();
-
-        console.log("[server] MongoDB connected successfully");
-
-        if (!shuttingDown) {
-            await startBackgroundServices();
-        }
-
-    } catch (error) {
-        console.error("[server] MongoDB connection failed:", error);
-
-        try {
-            await recordServerError(error);
-        } catch (logError) {
-            console.error("[server] Error logging failed:", logError);
-        }
-
-        console.error(
-            "[server] HTTP server remains online, but database APIs may not work"
-        );
-    }
-});
-
-// Process events
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
-
-process.on("unhandledRejection", async (reason) => {
-    console.error("[process] unhandled rejection:", reason);
-
-    try {
-        await recordServerError(reason);
-    } catch (error) {
-        console.error("[process] Error logging failed:", error);
-    }
-});
-
-process.on("uncaughtException", (error) => {
-    console.error("[process] uncaught exception:", error);
-    shutdown("uncaughtException", 1);
-});
+//# sourceMappingURL=server.js.map

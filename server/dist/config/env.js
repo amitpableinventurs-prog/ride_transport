@@ -94,15 +94,34 @@ exports.env = {
     isProduction,
 };
 // Refuse to start in production with development defaults: guessable secrets would let anyone sign tokens.
+// Every problem is listed with its reason, so one fix-and-redeploy round is enough.
 if (isProduction) {
-    const weak = (name, value) => !process.env[name] || value.length < 32 || /change-me|dev-/i.test(value);
+    const secretProblem = (name, value) => {
+        if (!process.env[name])
+            return `${name} is not set`;
+        if (/change-me|dev-/i.test(value))
+            return `${name} is a development placeholder`;
+        if (value.length < 32)
+            return `${name} is ${value.length} characters long, use 32 or more`;
+        return null;
+    };
+    // The app and OTP secrets fall back to values derived from JWT_ACCESS_SECRET, so they are only checked when set.
+    const optionalSecretProblem = (name) => (process.env[name] ? secretProblem(name, process.env[name]) : null);
     const problems = [
-        weak('JWT_ACCESS_SECRET', jwtAccessSecret) && 'JWT_ACCESS_SECRET',
-        weak('JWT_REFRESH_SECRET', jwtRefreshSecret) && 'JWT_REFRESH_SECRET',
+        secretProblem('JWT_ACCESS_SECRET', jwtAccessSecret),
+        secretProblem('JWT_REFRESH_SECRET', jwtRefreshSecret),
+        optionalSecretProblem('JWT_APP_ACCESS_SECRET'),
+        optionalSecretProblem('JWT_APP_REFRESH_SECRET'),
+        optionalSecretProblem('OTP_SECRET'),
         jwtAccessSecret === jwtRefreshSecret && 'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must differ',
-        (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*') && 'CORS_ORIGIN (set the admin panel origin)',
+        (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*') && 'CORS_ORIGIN is not set (admin panel and website addresses)',
     ].filter(Boolean);
     if (problems.length)
-        throw new Error(`Unsafe production configuration, fix: ${problems.join(', ')}`);
+        throw new Error(`Unsafe production configuration, fix: ${problems.join('; ')}`);
+    // Allowed, but on a live server these are almost always a mistake.
+    if (!process.env.UPLOAD_DIR)
+        console.warn('[env] UPLOAD_DIR is not set: uploads go inside the app folder and are lost on every redeploy');
+    if (!process.env.PUBLIC_BASE_URL)
+        console.warn('[env] PUBLIC_BASE_URL is not set: share-tracking and invoice links will point to localhost');
 }
 //# sourceMappingURL=env.js.map

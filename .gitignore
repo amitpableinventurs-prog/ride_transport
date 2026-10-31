@@ -28,3 +28,6 @@ dist-ssr
 # Local tooling
 .venv
 .claude
+
+# Zips and env file prepared for manual Hostinger uploads (the env file holds secrets)
+hostinger-upload/

@@ -19,5 +19,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Local demo launcher (ts-node only): it needs mongodb-memory-server, a devDependency that production installs skip.
+  "exclude": ["src/dev-memory.ts"]
 }

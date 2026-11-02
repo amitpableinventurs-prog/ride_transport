@@ -1,6 +1,5 @@
 // OpenAPI 3.0 spec for the Admin API, served by Swagger UI at /api-docs.
 // Keep this in sync with src/routes/* when adding or changing endpoints.
-import { env } from '../config/env'
 import { PERMISSION_KEYS, ROLE_KEYS } from '../types/rbac'
 import { GENDERS } from '../models/personalProfile'
 import { APP_ERROR_SOURCES, ERROR_LEVELS, ERROR_LOG_RETENTION_DAYS, ERROR_PLATFORMS, ERROR_SOURCES } from '../models/ErrorLog'
@@ -1746,7 +1745,8 @@ export const openApiSpec = {
       SOCKET_DOCS,
     ].join('\n'),
   },
-  servers: [{ url: `http://localhost:${env.port}/api/v1`, description: 'Local' }],
+  // Relative, so Try it out calls whichever host serves the docs (localhost in dev, the Hostinger domain in production).
+  servers: [{ url: '/api/v1', description: 'This server' }],
   security: [{ bearerAuth: [] }],
   tags: [
     { name: 'Customer', description: 'SRS §10.2: customer app' },

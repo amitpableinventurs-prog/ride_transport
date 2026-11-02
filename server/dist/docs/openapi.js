@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.openApiSpec = void 0;
 // OpenAPI 3.0 spec for the Admin API, served by Swagger UI at /api-docs.
 // Keep this in sync with src/routes/* when adding or changing endpoints.
-const env_1 = require("../config/env");
 const rbac_1 = require("../types/rbac");
 const personalProfile_1 = require("../models/personalProfile");
 const ErrorLog_1 = require("../models/ErrorLog");
@@ -1612,7 +1611,8 @@ exports.openApiSpec = {
             SOCKET_DOCS,
         ].join('\n'),
     },
-    servers: [{ url: `http://localhost:${env_1.env.port}/api/v1`, description: 'Local' }],
+    // Relative, so Try it out calls whichever host serves the docs (localhost in dev, the Hostinger domain in production).
+    servers: [{ url: '/api/v1', description: 'This server' }],
     security: [{ bearerAuth: [] }],
     tags: [
         { name: 'Customer', description: 'SRS §10.2: customer app' },

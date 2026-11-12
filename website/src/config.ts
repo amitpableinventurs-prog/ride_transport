@@ -49,4 +49,7 @@ export const site = {
   ],
 }
 
-export const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1').replace(/\/$/, '')
+// A production build without VITE_API_BASE_URL (the env files are not committed) must still reach the live API.
+const defaultApiBaseUrl = import.meta.env.PROD ? 'https://ridetransportapi.ultramoderntechnologiesuat.com/api/v1' : 'http://localhost:5000/api/v1'
+
+export const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl).replace(/\/$/, '')

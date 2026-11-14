@@ -24,7 +24,7 @@ npm run seed               # creates the 5 system roles + 5 demo admins + settin
 npm run dev                 # starts the API on http://localhost:5000
 ```
 
-Demo login for every seeded admin: password `Admin@123`, then the OTP shown on the login screen (development mode) (see console output from `npm run seed` for the exact value if you changed `SEED_ADMIN_PASSWORD`).
+Demo login for every seeded admin: password `Admin@123` (see console output from `npm run seed` for the exact value if you changed `SEED_ADMIN_PASSWORD`).
 
 | Role | Email |
 |---|---|

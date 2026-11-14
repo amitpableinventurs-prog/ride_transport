@@ -122,13 +122,6 @@ export function SettingsPage() {
                 />
               </Field>
             </div>
-            <div className="mt-4 border-t border-navy-50 pt-4">
-              <ToggleRow
-                label="Require OTP for admin sign-in (sent by SMS to the admin's phone)"
-                checked={settings.adminLoginOtpEnabled}
-                onChange={(v) => update('adminLoginOtpEnabled', v)}
-              />
-            </div>
           </div>
 
           <div className="rounded-2xl border border-navy-100 bg-white p-5 shadow-sm">

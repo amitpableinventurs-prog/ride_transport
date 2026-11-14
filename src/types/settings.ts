@@ -8,7 +8,6 @@ export interface PlatformSettings {
   transportServiceEnabled: boolean
   maintenanceMode: boolean
   otpExpiryMinutes: number
-  adminLoginOtpEnabled: boolean
   accessTokenTtlMinutes: number
   refreshTokenTtlDays: number
   maxCashDues: number

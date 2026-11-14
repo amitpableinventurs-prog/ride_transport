@@ -18,8 +18,6 @@ export const adminLoginBody = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
   password: z.string().min(1).max(200),
 })
-export const adminVerifyOtpBody = z.object({ otpToken: z.string().min(10).max(2000), otp: z.string().regex(/^\d{6}$/, 'must be 6 digits') })
-export const adminResendOtpBody = z.object({ otpToken: z.string().min(10).max(2000) })
 export const refreshBody = z.object({ refreshToken: z.string().min(10).max(2000) })
 
 // ---------- Admin users ----------

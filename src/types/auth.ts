@@ -14,14 +14,3 @@ export interface LoginResponse {
   refreshToken: string
   user: AuthUser
 }
-
-export interface OtpChallenge {
-  otpToken: string
-  maskedPhone: string
-  expiresInSeconds: number
-  resendAfterSeconds: number
-  /** Only returned by a development backend (OTP_DEV_ECHO). */
-  devOtp?: string
-}
-
-export type LoginResult = LoginResponse | ({ otpRequired: true } & OtpChallenge)

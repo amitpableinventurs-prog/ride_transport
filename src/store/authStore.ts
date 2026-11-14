@@ -2,7 +2,7 @@ import axios from 'axios'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { apiClient } from '@/api/client'
-import type { AuthUser, LoginResponse, LoginResult, OtpChallenge } from '@/types/auth'
+import type { AuthUser, LoginResponse } from '@/types/auth'
 import type { PermissionKey } from '@/types/rbac'
 
 interface AuthState {
@@ -11,12 +11,7 @@ interface AuthState {
   refreshToken: string | null
   status: 'idle' | 'loading' | 'authenticated' | 'unauthenticated'
   error: string | null
-  /** Set after a correct password when the backend requires an OTP to finish signing in. */
-  otpChallenge: OtpChallenge | null
-  login: (email: string, password: string) => Promise<'authenticated' | 'otp_required'>
-  verifyOtp: (otp: string) => Promise<void>
-  resendOtp: () => Promise<void>
-  cancelOtp: () => void
+  login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   bootstrap: () => Promise<void>
   refreshAccessToken: () => Promise<string | null>
@@ -60,17 +55,11 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       status: 'idle',
       error: null,
-      otpChallenge: null,
 
       login: async (email, password) => {
-        set({ status: 'loading', error: null, otpChallenge: null })
+        set({ status: 'loading', error: null })
         try {
-          const { data } = await apiClient.post<LoginResult>('/auth/login', { email, password })
-          if ('otpRequired' in data) {
-            const { otpRequired: _omit, ...challenge } = data
-            set({ status: 'unauthenticated', otpChallenge: challenge })
-            return 'otp_required'
-          }
+          const { data } = await apiClient.post<LoginResponse>('/auth/login', { email, password })
           set({
             user: data.user,
             accessToken: data.accessToken,
@@ -78,52 +67,11 @@ export const useAuthStore = create<AuthState>()(
             status: 'authenticated',
             error: null,
           })
-          return 'authenticated'
         } catch (err) {
           set({ status: 'unauthenticated', error: apiErrorMessage(err, 'Unable to sign in. Please try again.') })
           throw err
         }
       },
-
-      verifyOtp: async (otp) => {
-        const challenge = get().otpChallenge
-        if (!challenge) throw new Error('No OTP challenge in progress')
-        set({ error: null })
-        try {
-          const { data } = await apiClient.post<LoginResponse>('/auth/login/verify-otp', { otpToken: challenge.otpToken, otp })
-          set({
-            user: data.user,
-            accessToken: data.accessToken,
-            refreshToken: data.refreshToken,
-            status: 'authenticated',
-            error: null,
-            otpChallenge: null,
-          })
-        } catch (err) {
-          const status = (err as { response?: { status?: number } }).response?.status
-          // 401 means the challenge itself expired: send the admin back to the password step.
-          set({
-            error: apiErrorMessage(err, 'Could not verify the OTP. Please try again.'),
-            ...(status === 401 ? { otpChallenge: null } : {}),
-          })
-          throw err
-        }
-      },
-
-      resendOtp: async () => {
-        const challenge = get().otpChallenge
-        if (!challenge) return
-        set({ error: null })
-        try {
-          const { data } = await apiClient.post<Omit<OtpChallenge, 'otpToken'>>('/auth/login/resend-otp', { otpToken: challenge.otpToken })
-          set({ otpChallenge: { ...challenge, ...data } })
-        } catch (err) {
-          set({ error: apiErrorMessage(err, 'Could not resend the OTP.') })
-          throw err
-        }
-      },
-
-      cancelOtp: () => set({ otpChallenge: null, error: null }),
 
       logout: async () => {
         try {
@@ -189,7 +137,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       clearSession: () => {
-        set({ user: null, accessToken: null, refreshToken: null, status: 'unauthenticated', error: null, otpChallenge: null })
+        set({ user: null, accessToken: null, refreshToken: null, status: 'unauthenticated', error: null })
       },
 
       hasPermission: (permission) => {

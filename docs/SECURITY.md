@@ -6,7 +6,6 @@
 |---|---|---|---|---|
 | Admin access | Admin panel | 15 min (`ACCESS_TOKEN_TTL_MINUTES`) | `JWT_ACCESS_SECRET` | `admin:access` |
 | Admin refresh | Admin panel | 7 days (`REFRESH_TOKEN_TTL_DAYS`) | `JWT_REFRESH_SECRET` | `admin:refresh` |
-| Admin login OTP step | Admin panel | 10 min | `JWT_ACCESS_SECRET` | `admin:otp-challenge` |
 | App access | Customer and rider apps | 60 min (`APP_ACCESS_TOKEN_TTL_MINUTES`) | `JWT_APP_ACCESS_SECRET` | `app:access` |
 | App refresh | Customer and rider apps | 30 days (`APP_REFRESH_TOKEN_TTL_DAYS`) | `JWT_APP_REFRESH_SECRET` | `app:refresh` |
 | App sign-up step | New phone number | 30 min | `JWT_APP_ACCESS_SECRET` | `app:registration` |

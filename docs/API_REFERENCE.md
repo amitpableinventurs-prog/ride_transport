@@ -54,7 +54,7 @@ Errors: 400 invalid amount or signature, 404 order or booking not found, 409 tri
 |---|---|---|
 | Customer app (Flutter) | `POST /api/v1/app/auth/otp/send`, `/app/auth/otp/resend`, `/app/auth/otp/verify`, `/app/auth/register`, `/app/auth/refresh`, `/app/auth/me`, `/app/auth/logout`. Body: `phone` plus `userType` (`customer`; `driver` and `partner` also work) | `/customer/*`, `/app/profile`, `/common/*` |
 | Rider app (own login, no role needed) | `POST /api/v1/rider/auth/otp/send`, `/rider/auth/otp/resend`, `/rider/auth/otp/verify`, `/rider/auth/refresh`, `/rider/auth/logout`, `/rider/auth/me`. Body: `phone` (and `otp`) | `/rider/*` |
-| Admin panel | `POST /api/v1/admin/auth/login` (email and password), then `POST /api/v1/admin/auth/login/verify-otp` | `/admin/*` |
+| Admin panel | `POST /api/v1/admin/auth/login` (email and password) | `/admin/*` |
 
 Send `Authorization: Bearer <accessToken>`. Access tokens are short-lived: use the refresh endpoint of the same login (single-use refresh tokens). In development, the OTP is returned as `devOtp` in the send response.
 
@@ -1199,11 +1199,9 @@ Responses: 200, 400, 401, 409
 
 ## Admin Auth
 
-#### `POST /admin/auth/login` — Step 1: log in with email and password
+#### `POST /admin/auth/login` — Log in with email and password
 
-Rate-limited to 10 attempts per 15 minutes. Suspended accounts get `403`.
-
-When admin OTP is enabled (default), returns an `AdminOtpChallenge` and sends an OTP by SMS; finish with `/admin/auth/login/verify-otp`. When disabled, returns tokens directly.
+Returns tokens directly. Rate-limited to 10 failed attempts per 15 minutes. Suspended accounts get `403`.
 
 Auth: Public (no token)
 
@@ -1212,27 +1210,6 @@ Body:
 - `password` (string, required) e.g. `"password"`
 
 Responses: 200, 400, 403, 429
-
-#### `POST /admin/auth/login/verify-otp` — Step 2: verify the login OTP
-
-Returns tokens on success. Wrong codes return `attemptsLeft`. `401` means the `otpToken` expired and the admin must sign in again.
-
-Auth: Public (no token)
-
-Body:
-- `otpToken` (string, required)
-- `otp` (string, required) e.g. `"123456"`
-
-Responses: 200, 400, 429
-
-#### `POST /admin/auth/login/resend-otp` — Resend the login OTP
-
-Auth: Public (no token)
-
-Body:
-- `otpToken` (string, required)
-
-Responses: 200, 429
 
 #### `POST /admin/auth/refresh` — Exchange a refresh token for a new token pair
 
@@ -1378,8 +1355,7 @@ Body:
 - `rideServiceEnabled` (boolean)
 - `transportServiceEnabled` (boolean)
 - `maintenanceMode` (boolean)
-- `otpExpiryMinutes` (integer): Validity of admin and app OTPs
-- `adminLoginOtpEnabled` (boolean): Require an SMS OTP after the admin password
+- `otpExpiryMinutes` (integer): Validity of app OTPs
 - `accessTokenTtlMinutes` (integer)
 - `refreshTokenTtlDays` (integer)
 

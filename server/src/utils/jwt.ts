@@ -12,7 +12,6 @@ const ALGORITHM = 'HS256' as const
 export const AUDIENCE = {
   adminAccess: 'admin:access',
   adminRefresh: 'admin:refresh',
-  adminOtp: 'admin:otp-challenge',
   appAccess: 'app:access',
   appRefresh: 'app:refresh',
   appRegistration: 'app:registration',
@@ -68,25 +67,6 @@ export function verifyAccessToken(token: unknown): AccessTokenPayload | null {
 
 export function verifyRefreshToken(token: unknown): RefreshTokenPayload | null {
   return verify<RefreshTokenPayload>(token, env.jwtRefreshSecret, AUDIENCE.adminRefresh, 'refresh')
-}
-
-// ---- Admin login OTP challenge ----
-// Issued after a correct password when OTP is enabled; exchanged for real tokens
-// once the OTP is verified. It cannot be used as an access token (different audience and type).
-
-export interface OtpChallengePayload {
-  sub: string
-  type: 'admin_otp'
-}
-
-const OTP_CHALLENGE_TTL_MINUTES = 10
-
-export function signOtpChallengeToken(adminId: string): string {
-  return sign({ sub: adminId, type: 'admin_otp' } satisfies OtpChallengePayload, env.jwtAccessSecret, AUDIENCE.adminOtp, `${OTP_CHALLENGE_TTL_MINUTES}m`)
-}
-
-export function verifyOtpChallengeToken(token: unknown): OtpChallengePayload | null {
-  return verify<OtpChallengePayload>(token, env.jwtAccessSecret, AUDIENCE.adminOtp, 'admin_otp')
 }
 
 // ---- Mobile app (customer / driver / partner) ----

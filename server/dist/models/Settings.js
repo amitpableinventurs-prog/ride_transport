@@ -13,7 +13,6 @@ const settingsSchema = new mongoose_1.Schema({
     transportServiceEnabled: { type: Boolean, default: true },
     maintenanceMode: { type: Boolean, default: false },
     otpExpiryMinutes: { type: Number, default: 5 },
-    adminLoginOtpEnabled: { type: Boolean, default: true },
     accessTokenTtlMinutes: { type: Number, default: 15 },
     refreshTokenTtlDays: { type: Number, default: 7 },
     // Dispatch and trip rules used by the customer / rider apps

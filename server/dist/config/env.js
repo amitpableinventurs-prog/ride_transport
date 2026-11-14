@@ -21,6 +21,11 @@ const corsOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
     .split(',')
     .map((o) => o.trim().replace(/\/$/, ''))
     .filter(Boolean);
+// The public website reads the policy pages from this API, so its origins are always allowed.
+for (const origin of ['https://anzcabs.com', 'https://www.anzcabs.com']) {
+    if (!corsOrigins.includes(origin))
+        corsOrigins.push(origin);
+}
 exports.env = {
     port,
     // Base URL the apps use to reach this server; used in share-tracking and invoice links.

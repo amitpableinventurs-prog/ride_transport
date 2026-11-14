@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adjustWalletBody = exports.updateCommissionBody = exports.createCommissionBody = exports.updatePricingBody = exports.createPricingBody = exports.updateAdminBody = exports.createAdminBody = exports.refreshBody = exports.adminResendOtpBody = exports.adminVerifyOtpBody = exports.adminLoginBody = exports.idParams = void 0;
+exports.adjustWalletBody = exports.updateCommissionBody = exports.createCommissionBody = exports.updatePricingBody = exports.createPricingBody = exports.updateAdminBody = exports.createAdminBody = exports.refreshBody = exports.adminLoginBody = exports.idParams = void 0;
 // zod schemas for admin endpoints that move money, change permissions or sign people in.
 // z.object() drops unknown fields, which is what stops a client from setting fields it should not.
 const zod_1 = require("zod");
@@ -17,8 +17,6 @@ exports.adminLoginBody = zod_1.z.object({
     email: zod_1.z.string().trim().toLowerCase().email().max(254),
     password: zod_1.z.string().min(1).max(200),
 });
-exports.adminVerifyOtpBody = zod_1.z.object({ otpToken: zod_1.z.string().min(10).max(2000), otp: zod_1.z.string().regex(/^\d{6}$/, 'must be 6 digits') });
-exports.adminResendOtpBody = zod_1.z.object({ otpToken: zod_1.z.string().min(10).max(2000) });
 exports.refreshBody = zod_1.z.object({ refreshToken: zod_1.z.string().min(10).max(2000) });
 // ---------- Admin users ----------
 const phone = zod_1.z.string().trim().regex(/^\+?[\d\s-]{8,16}$/, 'must be a valid phone number');

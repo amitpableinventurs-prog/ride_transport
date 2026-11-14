@@ -1,21 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.login = login;
-exports.verifyLoginOtp = verifyLoginOtp;
-exports.resendLoginOtp = resendLoginOtp;
 exports.refresh = refresh;
 exports.logout = logout;
 exports.me = me;
 const Admin_1 = require("../models/Admin");
 const Role_1 = require("../models/Role");
-const Settings_1 = require("../models/Settings");
 const password_1 = require("../utils/password");
 const jwt_1 = require("../utils/jwt");
 const sessions_1 = require("../utils/sessions");
 const audit_1 = require("../utils/audit");
 const roles_1 = require("../utils/roles");
-const otp_1 = require("../utils/otp");
-const phone_1 = require("../utils/phone");
 async function toAuthUser(admin) {
     const role = await Role_1.Role.findOne({ key: admin.role });
     return {
@@ -36,26 +31,6 @@ async function completeLogin(admin, res) {
     await (0, audit_1.recordAudit)(admin, 'auth.login', 'Session', admin.email);
     res.json({ accessToken, refreshToken, user: await toAuthUser(admin) });
 }
-function sendOtpError(res, err) {
-    if (err instanceof otp_1.OtpError) {
-        res.status(err.status).json({ message: err.message, ...err.details });
-        return;
-    }
-    throw err;
-}
-async function loadChallengeAdmin(otpToken, res) {
-    const payload = (0, jwt_1.verifyOtpChallengeToken)(otpToken);
-    if (!payload) {
-        res.status(401).json({ message: 'Your sign-in session expired. Please sign in again.' });
-        return null;
-    }
-    const admin = await Admin_1.Admin.findById(payload.sub);
-    if (!admin || admin.status === 'suspended') {
-        res.status(401).json({ message: 'Account unavailable' });
-        return null;
-    }
-    return admin;
-}
 async function login(req, res) {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -71,50 +46,7 @@ async function login(req, res) {
         res.status(403).json({ message: 'This account has been suspended. Contact a Super Admin.' });
         return;
     }
-    const settings = await Settings_1.Settings.findOne({ singleton: 'platform' }).select('adminLoginOtpEnabled');
-    if (settings?.adminLoginOtpEnabled === false) {
-        await completeLogin(admin, res);
-        return;
-    }
-    try {
-        const issued = await (0, otp_1.issueOtp)('admin_login', admin.id, admin.phone);
-        res.json({
-            otpRequired: true,
-            otpToken: (0, jwt_1.signOtpChallengeToken)(admin.id),
-            maskedPhone: (0, phone_1.maskPhone)(admin.phone),
-            ...issued,
-        });
-    }
-    catch (err) {
-        sendOtpError(res, err);
-    }
-}
-async function verifyLoginOtp(req, res) {
-    const { otpToken, otp } = req.body;
-    const admin = await loadChallengeAdmin(otpToken, res);
-    if (!admin)
-        return;
-    try {
-        await (0, otp_1.verifyOtp)('admin_login', admin.id, otp);
-    }
-    catch (err) {
-        sendOtpError(res, err);
-        return;
-    }
     await completeLogin(admin, res);
-}
-async function resendLoginOtp(req, res) {
-    const { otpToken } = req.body;
-    const admin = await loadChallengeAdmin(otpToken, res);
-    if (!admin)
-        return;
-    try {
-        const issued = await (0, otp_1.issueOtp)('admin_login', admin.id, admin.phone);
-        res.json({ maskedPhone: (0, phone_1.maskPhone)(admin.phone), ...issued });
-    }
-    catch (err) {
-        sendOtpError(res, err);
-    }
 }
 async function refresh(req, res) {
     const { refreshToken } = req.body;

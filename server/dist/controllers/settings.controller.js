@@ -27,7 +27,6 @@ async function updateSettings(req, res) {
         'transportServiceEnabled',
         'maintenanceMode',
         'otpExpiryMinutes',
-        'adminLoginOtpEnabled',
         'accessTokenTtlMinutes',
         'refreshTokenTtlDays',
         'dispatchRadiusKm',

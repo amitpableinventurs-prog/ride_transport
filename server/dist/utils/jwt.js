@@ -8,8 +8,6 @@ exports.signAccessToken = signAccessToken;
 exports.signRefreshToken = signRefreshToken;
 exports.verifyAccessToken = verifyAccessToken;
 exports.verifyRefreshToken = verifyRefreshToken;
-exports.signOtpChallengeToken = signOtpChallengeToken;
-exports.verifyOtpChallengeToken = verifyOtpChallengeToken;
 exports.signAppAccessToken = signAppAccessToken;
 exports.signAppRefreshToken = signAppRefreshToken;
 exports.verifyAppAccessToken = verifyAppAccessToken;
@@ -29,7 +27,6 @@ const ALGORITHM = 'HS256';
 exports.AUDIENCE = {
     adminAccess: 'admin:access',
     adminRefresh: 'admin:refresh',
-    adminOtp: 'admin:otp-challenge',
     appAccess: 'app:access',
     appRefresh: 'app:refresh',
     appRegistration: 'app:registration',
@@ -62,13 +59,6 @@ function verifyAccessToken(token) {
 }
 function verifyRefreshToken(token) {
     return verify(token, env_1.env.jwtRefreshSecret, exports.AUDIENCE.adminRefresh, 'refresh');
-}
-const OTP_CHALLENGE_TTL_MINUTES = 10;
-function signOtpChallengeToken(adminId) {
-    return sign({ sub: adminId, type: 'admin_otp' }, env_1.env.jwtAccessSecret, exports.AUDIENCE.adminOtp, `${OTP_CHALLENGE_TTL_MINUTES}m`);
-}
-function verifyOtpChallengeToken(token) {
-    return verify(token, env_1.env.jwtAccessSecret, exports.AUDIENCE.adminOtp, 'admin_otp');
 }
 exports.APP_USER_TYPES = ['customer', 'driver', 'partner'];
 function signAppAccessToken(userId, userType, fid) {

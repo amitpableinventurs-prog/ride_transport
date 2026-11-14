@@ -1595,9 +1595,8 @@ exports.openApiSpec = {
             'REST API for the AnZ Cabs admin panel (`/admin/*`) and the mobile apps (`/auth/*`, `/customer/*`, `/rider/*`, `/app/*`).',
             '',
             '### Admin APIs',
-            '1. `POST /admin/auth/login` with email + password. When admin OTP is on (Settings → Security, default on), the response has `otpRequired: true` and an `otpToken`, and a 6-digit OTP is sent by SMS to the phone on the admin account.',
-            '2. `POST /admin/auth/login/verify-otp` with the `otpToken` and `otp` returns the tokens.',
-            '3. Click **Authorize** and paste the `accessToken` into **bearerAuth**.',
+            '1. `POST /admin/auth/login` with email + password returns the tokens.',
+            '2. Click **Authorize** and paste the `accessToken` into **bearerAuth**.',
             '',
             'Most admin endpoints also need a role permission, shown in each description; a missing permission returns `403`.',
             '',
@@ -1695,22 +1694,6 @@ exports.openApiSpec = {
                 attemptsLeft: int({ description: 'Present after a wrong code' }),
                 retryAfterSeconds: int({ description: 'Present when rate limited' }),
             }, ['message']),
-            AdminOtpChallenge: obj({
-                otpRequired: bool({ example: true }),
-                otpToken: str({ description: 'Short-lived (10 min) token identifying this sign-in attempt' }),
-                maskedPhone: str({ example: '******1223' }),
-                expiresInSeconds: int({ example: 300 }),
-                resendAfterSeconds: int({ example: 30 }),
-                devOtp: str({ example: '123456', description: 'Development only' }),
-            }),
-            VerifyLoginOtpRequest: obj({ otpToken: str(), otp: str({ example: '123456', pattern: '^\\d{6}$' }) }, ['otpToken', 'otp']),
-            ResendLoginOtpRequest: obj({ otpToken: str() }, ['otpToken']),
-            OtpResent: obj({
-                maskedPhone: str({ example: '******1223' }),
-                expiresInSeconds: int({ example: 300 }),
-                resendAfterSeconds: int({ example: 30 }),
-                devOtp: str({ example: '123456', description: 'Development only' }),
-            }),
             // Mobile app auth
             AppOtpSent: obj({
                 message: str({ example: 'OTP sent' }),
@@ -1880,8 +1863,7 @@ exports.openApiSpec = {
                 rideServiceEnabled: bool(),
                 transportServiceEnabled: bool(),
                 maintenanceMode: bool(),
-                otpExpiryMinutes: int({ description: 'Validity of admin and app OTPs' }),
-                adminLoginOtpEnabled: bool({ description: 'Require an SMS OTP after the admin password' }),
+                otpExpiryMinutes: int({ description: 'Validity of app OTPs' }),
                 accessTokenTtlMinutes: int(),
                 refreshTokenTtlDays: int(),
             }),
@@ -2343,32 +2325,12 @@ exports.openApiSpec = {
         ...prefixPaths('/admin', {
             // ---------------- Auth ----------------
             '/auth/login': {
-                post: op('Admin Auth', 'Step 1: log in with email and password', {
+                post: op('Admin Auth', 'Log in with email and password', {
                     auth: false,
-                    description: [
-                        'Rate-limited to 10 attempts per 15 minutes. Suspended accounts get `403`.',
-                        'When admin OTP is enabled (default), returns an `AdminOtpChallenge` and sends an OTP by SMS; finish with `/admin/auth/login/verify-otp`. When disabled, returns tokens directly.',
-                    ].join('\n\n'),
+                    description: 'Returns tokens directly. Rate-limited to 10 failed attempts per 15 minutes. Suspended accounts get `403`.',
                     body: ref('LoginRequest'),
-                    response: { oneOf: [ref('AdminOtpChallenge'), ref('LoginResponse')] },
-                    errors: [400, 403, 429],
-                }),
-            },
-            '/auth/login/verify-otp': {
-                post: op('Admin Auth', 'Step 2: verify the login OTP', {
-                    auth: false,
-                    description: 'Returns tokens on success. Wrong codes return `attemptsLeft`. `401` means the `otpToken` expired and the admin must sign in again.',
-                    body: ref('VerifyLoginOtpRequest'),
                     response: ref('LoginResponse'),
-                    errors: [400, 429],
-                }),
-            },
-            '/auth/login/resend-otp': {
-                post: op('Admin Auth', 'Resend the login OTP', {
-                    auth: false,
-                    body: ref('ResendLoginOtpRequest'),
-                    response: ref('OtpResent'),
-                    errors: [429],
+                    errors: [400, 403, 429],
                 }),
             },
             '/auth/refresh': {

@@ -18,7 +18,7 @@ export const site = {
   },
 
   /** Cities shown under "Where we operate"; keep in line with the service areas in the admin panel. */
-  cities: ['Indore', 'Mumbai', 'Pune', 'Bengaluru', 'New Delhi'],
+  cities: ['Indore', 'Mumbai', 'Pune', 'Bengaluru', 'New Delhi', 'Srinagar', 'Jammu'],
 
   /** Registered company name, shown on the About and Contact pages. */
   legalName: 'AnZ Cabs & Logistics Private Limited',
